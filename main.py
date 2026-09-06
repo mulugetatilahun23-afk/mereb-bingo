@@ -6,7 +6,6 @@ import json
 import re
 import urllib.parse
 import string
-from datetime import datetime
 
 app = Flask(__name__)
 
@@ -20,7 +19,6 @@ MERCHANT_NAME = "MULUGETA TILAHUN"
 DAILY_LIMIT = 2000.0  
 MIN_REMAINING_BALANCE = 50.0  
 
-# Commission Settings (Total 20% -> 15% Admin / 5% Agent)
 TOTAL_COMMISSION_RATE = 0.20
 AGENT_COMMISSION_RATE = 0.05
 ADMIN_COMMISSION_RATE = 0.15
@@ -165,6 +163,66 @@ def index():
         </head>
         <body>
 
+            <!-- JavaScript Functions defined FIRST -->
+            <script>
+                var tg = null;
+                try {
+                    if (window.Telegram && window.Telegram.WebApp) {
+                        tg = window.Telegram.WebApp;
+                        tg.ready();
+                        tg.expand();
+                    }
+                } catch (e) {
+                    console.log("Telegram SDK load notice:", e);
+                }
+
+                var user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) 
+                             ? tg.initDataUnsafe.user 
+                             : { id: 12345678, first_name: "Mereb" };
+
+                var BOT_USER_NAME = "{{ bot_username }}";
+                var currentStake = 10;
+                var currentRoomCode = 'GLOBAL';
+                var selectedCartella = null;
+                var timerInterval = null;
+
+                function openModal(id) { 
+                    var el = document.getElementById(id);
+                    if (el) el.style.display = 'block'; 
+                }
+
+                function closeModal(id) { 
+                    var el = document.getElementById(id);
+                    if (el) el.style.display = 'none'; 
+                }
+
+                function showView(viewId) {
+                    var views = document.querySelectorAll('.page-view');
+                    for (var i = 0; i < views.length; i++) {
+                        views[i].classList.remove('active-view');
+                    }
+                    var target = document.getElementById(viewId);
+                    if (target) target.classList.add('active-view');
+                }
+
+                function shareInviteLink() {
+                    var inviteLink = "https://t.me/" + BOT_USER_NAME + "/app?startapp=ref_" + user.id;
+                    var text = encodeURIComponent("🎯 በመረብ ቢንጎ ይጫወቱ እና ያሸንፉ! በኔ ሊንክ ይመዝገቡ፡");
+                    var shareUrl = "https://t.me/share/url?url=" + encodeURIComponent(inviteLink) + "&text=" + text;
+
+                    if (tg && tg.openTelegramLink) {
+                        tg.openTelegramLink(shareUrl);
+                    } else {
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(inviteLink);
+                            alert("የግብዣ ሊንክ ተቀድቷል (Copied):\n" + inviteLink);
+                        } else {
+                            alert("የግብዣ ሊንክ:\n" + inviteLink);
+                        }
+                    }
+                }
+            </script>
+
             <!-- Home Dashboard -->
             <div id="home-view" class="page-view active-view">
                 <div class="header">
@@ -188,10 +246,13 @@ def index():
                     <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code</div>
                     <div class="menu-card" onclick="loadLeaderboard()">🏆 Leaderboard</div>
                     <div class="menu-card" style="grid-column: span 2;" onclick="openSection('support')">💬 Support</div>
+                    
+                    <!-- NEW INVITE BUTTON AT THE BOTTOM -->
+                    <div class="menu-card" style="grid-column: span 2; background: #8e44ad; color: #ffffff;" onclick="shareInviteLink()">👥 Invite (ጓደኛ ጋብዝ)</div>
                 </div>
             </div>
 
-            <!-- Registration Phone Modal -->
+            <!-- Modals -->
             <div id="register-modal" class="modal">
                 <h3 style="margin-top:0; color:#00c853;">እንኳን ደህና መጡ!</h3>
                 <p style="font-size:13px; color:#ccc;">ለመመዝገብ እና ጨዋታውን ለመጀመር እባክዎን የቴሌግራም ስልክ ቁጥርዎን ያስገቡ።</p>
@@ -199,7 +260,6 @@ def index():
                 <button onclick="registerPhone()">መዝግብ እና ጀምር (Register)</button>
             </div>
 
-            <!-- Stake & Mode Selection Modal -->
             <div id="stake-modal" class="modal">
                 <h4 style="margin-top:0;">የጨዋታ አይነት እና ውርርድ ይምረጡ</h4>
                 <div class="stake-opts">
@@ -220,7 +280,6 @@ def index():
                 <button style="background:#e53935; margin-top:10px;" onclick="closeModal('stake-modal')">ተመለስ</button>
             </div>
 
-            <!-- Cartella Selection View (1-300) -->
             <div id="cartella-view" class="page-view">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <button style="width:auto; margin:0; padding:6px 12px;" onclick="exitCartellaView()">← Back</button>
@@ -238,7 +297,6 @@ def index():
                 <button style="margin-top:12px;" onclick="confirmCartellaSelection()">ካርቴላ አረጋግጥ (Join Game)</button>
             </div>
 
-            <!-- Active Bingo Game View -->
             <div id="game-view" class="page-view">
                 <div style="background: #1e3c72; padding: 12px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
                     <h3 style="margin:0; color:#ffb300;" id="game-room-title">Global Match</h3>
@@ -259,7 +317,6 @@ def index():
                 </div>
             </div>
 
-            <!-- Agent Dashboard Modal -->
             <div id="agent-modal" class="modal">
                 <h3 style="margin-top:0; color:#ff9800;">💼 የኤጀንት ዳሽቦርድ (Agent Panel)</h3>
                 
@@ -269,8 +326,7 @@ def index():
                         <div class="profile-row"><span>የተጋበዙ ተጫዋቾች:</span> <b id="agent-total-users">0</b></div>
                         <div class="profile-row"><span>የተገኘ 5% ኮሚሽን:</span> <b id="agent-comm-earned" style="color:#ffb300;">0.00 ETB</b></div>
                     </div>
-                    <p style="font-size:12px; color:#aaa;">የእርሶ ልዩ የኤጀንት ሊንክ (ተጫዋቾች በዚህ ሊንክ ሲገቡ 5% ኮሚሽን ያገኛሉ)፡</p>
-                    <button style="background:#00c853;" onclick="shareAgentLink()">🔗 የኤጀንት ሊንክ አጋራ (Share Agent Link)</button>
+                    <button style="background:#00c853;" onclick="shareInviteLink()">🔗 የኤጀንት ሊንክ አጋራ (Share Agent Link)</button>
                 </div>
 
                 <div id="agent-register-section" style="display:none; text-align:center;">
@@ -281,7 +337,6 @@ def index():
                 <button style="background:#e53935; margin-top:10px;" onclick="closeModal('agent-modal')">ዝጋ</button>
             </div>
 
-            <!-- Leaderboard & Profile View -->
             <div id="leaderboard-view" class="page-view">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <button style="width:auto; margin:0; padding:6px 12px;" onclick="showView('home-view')">← Back</button>
@@ -301,7 +356,6 @@ def index():
                 <div class="leaderboard-list" id="leaderboard-container"></div>
             </div>
 
-            <!-- Other Modals -->
             <div id="deposit-modal" class="modal">
                 <h4>በቴሌብር ሂሳብ መሙያ</h4>
                 <p style="font-size: 11px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን SMS እዚህ ይለጥፉ።</p>
@@ -334,61 +388,18 @@ def index():
             </div>
 
             <script>
-                // Safe Telegram WebApp Initialization
-                let tg = null;
-                try {
-                    if (window.Telegram && window.Telegram.WebApp) {
-                        tg = window.Telegram.WebApp;
-                        tg.ready();
-                        tg.expand();
-                    }
-                } catch (e) {
-                    console.error("Telegram SDK loading error:", e);
-                }
-
-                const user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) 
-                             ? tg.initDataUnsafe.user 
-                             : { id: 12345678, first_name: "Mereb" };
-
-                const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ? tg.initDataUnsafe.start_param : "";
-
-                let currentStake = 10;
-                let currentRoomCode = 'GLOBAL';
-                let selectedCartella = null;
-                let timerInterval = null;
-
-                // UI Global Functions
-                window.openModal = function(id) { 
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = 'block'; 
-                };
-
-                window.closeModal = function(id) { 
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = 'none'; 
-                };
-
-                window.showView = function(viewId) {
-                    document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active-view'));
-                    const target = document.getElementById(viewId);
-                    if (target) target.classList.add('active-view');
-                };
-
-                // Display First Name
                 document.getElementById('user-display').innerText = user.first_name || "Mereb";
 
-                // Sync User with Server
                 fetch('/api/sync-user', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         telegram_id: user.id, 
-                        first_name: user.first_name || "Mereb",
-                        start_param: startParam 
+                        first_name: user.first_name || "Mereb"
                     })
                 })
-                .then(res => res.json())
-                .then(data => {
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
                     if(data.status === 'success'){
                         document.getElementById('user-display').innerText = data.user.first_name || user.first_name || "Mereb";
                         document.getElementById('main-balance').innerText = (data.user.balance || 0).toFixed(2);
@@ -399,20 +410,19 @@ def index():
                         }
                     }
                 })
-                .catch(err => {
+                .catch(function(err) {
                     console.error("Sync Error:", err);
-                    document.getElementById('user-display').innerText = user.first_name || "Mereb";
                 });
 
-                window.registerPhone = function() {
-                    const phone = document.getElementById('reg-phone-input').value.trim();
+                function registerPhone() {
+                    var phone = document.getElementById('reg-phone-input').value.trim();
                     if(!phone) return alert("እባክዎን ስልክ ቁጥር ያስገቡ!");
 
                     fetch('/api/register-phone', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, phone: phone })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         if(res.status === 'success') {
                             alert("በስኬት ተመዝግበዋል!");
                             closeModal('register-modal');
@@ -421,45 +431,46 @@ def index():
                             alert(res.error);
                         }
                     });
-                };
+                }
 
-                window.setStake = function(amount) {
+                function setStake(amount) {
                     currentStake = amount;
-                    document.querySelectorAll('.stake-btn').forEach(btn => btn.classList.remove('selected'));
-                    const targetBtn = document.getElementById('stake-' + amount);
+                    var btns = document.querySelectorAll('.stake-btn');
+                    for(var i=0; i<btns.length; i++) { btns[i].classList.remove('selected'); }
+                    var targetBtn = document.getElementById('stake-' + amount);
                     if (targetBtn) targetBtn.classList.add('selected');
-                };
+                }
 
-                window.showGroupOptions = function() {
-                    const box = document.getElementById('group-options-box');
-                    if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
-                };
+                function showGroupOptions() {
+                    var box = document.getElementById('group-options-box');
+                    if (box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+                }
 
-                window.createGroupRoom = function() {
+                function createGroupRoom() {
                     fetch('/api/group/create', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, stake: currentStake })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         if(res.status === 'success') {
-                            alert("የቡድን ጨዋታ ተከፍቷል!\nየቡድን ኮድ: " + res.room_code + "\n\nሊንኩን ለጓደኞችዎ ያጋሩ!");
+                            alert("የቡድን ጨዋታ ተከፍቷል!\nየቡድን ኮድ: " + res.room_code);
                             if (tg && tg.openTelegramLink) tg.openTelegramLink(res.share_link);
                             proceedToCartellaSelection(res.room_code);
                         } else {
                             alert(res.error);
                         }
                     });
-                };
+                }
 
-                window.joinGroupRoom = function() {
-                    const code = document.getElementById('group-code-input').value.trim().toUpperCase();
+                function joinGroupRoom() {
+                    var code = document.getElementById('group-code-input').value.trim().toUpperCase();
                     if(!code) return alert("እባክዎን የቡድን ኮድ ያስገቡ!");
 
                     fetch('/api/group/join', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ room_code: code })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         if(res.status === 'success') {
                             setStake(res.stake);
                             proceedToCartellaSelection(res.room_code);
@@ -467,24 +478,24 @@ def index():
                             alert(res.error);
                         }
                     });
-                };
+                }
 
-                window.proceedToCartellaSelection = function(roomCode = 'GLOBAL') {
-                    currentRoomCode = roomCode;
+                function proceedToCartellaSelection(roomCode) {
+                    currentRoomCode = roomCode || 'GLOBAL';
                     closeModal('stake-modal');
                     document.getElementById('disp-stake').innerText = currentStake;
                     render300Cartellas();
                     fetchGameStats();
                     start30SecTimer();
                     showView('cartella-view');
-                };
+                }
 
                 function start30SecTimer() {
-                    let timeLeft = 30;
+                    var timeLeft = 30;
                     document.getElementById('timer-val').innerText = timeLeft;
                     if(timerInterval) clearInterval(timerInterval);
 
-                    timerInterval = setInterval(() => {
+                    timerInterval = setInterval(function() {
                         timeLeft--;
                         document.getElementById('timer-val').innerText = timeLeft;
                         if(timeLeft <= 0) {
@@ -495,68 +506,70 @@ def index():
                     }, 1000);
                 }
 
-                window.exitCartellaView = function() {
+                function exitCartellaView() {
                     if(timerInterval) clearInterval(timerInterval);
                     showView('home-view');
-                };
+                }
 
                 function fetchGameStats() {
                     fetch('/api/game/stats?stake=' + currentStake + '&room=' + currentRoomCode)
-                        .then(r => r.json())
-                        .then(res => {
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
                             document.getElementById('players-val').innerText = res.players;
                             document.getElementById('derash-val').innerText = res.derash.toFixed(2);
                         });
                 }
 
                 function render300Cartellas() {
-                    const container = document.getElementById('cartella-container');
+                    var container = document.getElementById('cartella-container');
                     container.innerHTML = '';
-                    for (let i = 1; i <= 300; i++) {
-                        const div = document.createElement('div');
-                        div.className = 'cartella-num' + (selectedCartella === i ? ' selected' : '');
-                        div.innerText = i;
-                        div.onclick = () => { selectedCartella = i; render300Cartellas(); };
-                        container.appendChild(div);
+                    for (var i = 1; i <= 300; i++) {
+                        (function(num) {
+                            var div = document.createElement('div');
+                            div.className = 'cartella-num' + (selectedCartella === num ? ' selected' : '');
+                            div.innerText = num;
+                            div.onclick = function() { selectedCartella = num; render300Cartellas(); };
+                            container.appendChild(div);
+                        })(i);
                     }
                 }
 
-                window.confirmCartellaSelection = function() {
+                function confirmCartellaSelection() {
                     if (!selectedCartella) return alert("እባክዎን 1 ካርቴላ ይምረጡ!");
 
                     fetch('/api/game/generate-card', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, cartella_num: selectedCartella, stake: currentStake, room_code: currentRoomCode })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         if (res.status === 'success') {
                             if(timerInterval) clearInterval(timerInterval);
                             renderBingoBoard(res.card, selectedCartella);
-                            document.getElementById('game-room-title').innerText = currentRoomCode === 'GLOBAL' ? 'Global Match' : 'Group: ' + currentRoomCode;
+                            document.getElementById('game-room-title').innerText = (currentRoomCode === 'GLOBAL') ? 'Global Match' : 'Group: ' + currentRoomCode;
                             showView('game-view');
                         } else {
                             alert(res.error);
                         }
                     });
-                };
+                }
 
                 function renderBingoBoard(cardData, cartellaNum) {
                     document.getElementById('card-title').innerText = "Cartella #" + cartellaNum;
-                    const board = document.getElementById('bingo-board');
+                    var board = document.getElementById('bingo-board');
                     board.innerHTML = '';
 
-                    const headers = ['B', 'I', 'N', 'G', 'O'];
-                    headers.forEach(h => {
-                        const cell = document.createElement('div');
+                    var headers = ['B', 'I', 'N', 'G', 'O'];
+                    headers.forEach(function(h) {
+                        var cell = document.createElement('div');
                         cell.className = 'bingo-cell header-cell';
                         cell.innerText = h;
                         board.appendChild(cell);
                     });
 
-                    for (let row = 0; row < 5; row++) {
-                        headers.forEach(col => {
-                            const val = cardData[col][row];
-                            const cell = document.createElement('div');
+                    for (var row = 0; row < 5; row++) {
+                        headers.forEach(function(col) {
+                            var val = cardData[col][row];
+                            var cell = document.createElement('div');
                             cell.className = (val === '★' || val === 'FREE') ? 'bingo-cell star-cell' : 'bingo-cell';
                             cell.innerText = (val === '★' || val === 'FREE') ? '★' : val;
                             board.appendChild(cell);
@@ -564,23 +577,23 @@ def index():
                     }
                 }
 
-                window.claimBingo = function() {
+                function claimBingo() {
                     fetch('/api/game/claim-bingo', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, stake: currentStake, room_code: currentRoomCode })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         alert(res.message || res.error);
                         if(res.status === 'success') {
                             document.getElementById('winner-text').innerText = (user.first_name || "Mereb") + " won " + res.reward + " ETB!";
                         }
                     });
-                };
+                }
 
-                window.loadAgentDashboard = function() {
+                function loadAgentDashboard() {
                     fetch('/api/agent/stats?telegram_id=' + user.id)
-                        .then(r => r.json())
-                        .then(res => {
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
                             if(res.status === 'success') {
                                 openModal('agent-modal');
                                 if(res.is_agent) {
@@ -594,37 +607,25 @@ def index():
                                 }
                             }
                         });
-                };
+                }
 
-                window.registerAsAgent = function() {
+                function registerAsAgent() {
                     fetch('/api/agent/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         if(res.status === 'success') {
                             alert("እንኳን ደስ አለዎት! አሁን ኤጀንት ሆነዋል።");
                             loadAgentDashboard();
                         }
                     });
-                };
+                }
 
-                window.shareAgentLink = function() {
-                    fetch('/api/agent/share-link', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ telegram_id: user.id })
-                    }).then(r => r.json()).then(res => {
-                        if(res.status === 'success' && tg && tg.openTelegramLink) {
-                            tg.openTelegramLink(res.share_link);
-                        }
-                    });
-                };
-
-                window.loadLeaderboard = function() {
+                function loadLeaderboard() {
                     fetch('/api/leaderboard?telegram_id=' + user.id)
-                        .then(r => r.json())
-                        .then(res => {
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
                             if(res.status === 'success') {
                                 document.getElementById('prof-name').innerText = res.profile.first_name;
                                 document.getElementById('prof-id').innerText = res.profile.telegram_id;
@@ -632,108 +633,99 @@ def index():
                                 document.getElementById('prof-bal').innerText = res.profile.balance.toFixed(2) + " ETB";
                                 document.getElementById('prof-comm').innerText = res.profile.commission_balance.toFixed(2) + " ETB";
 
-                                const container = document.getElementById('leaderboard-container');
+                                var container = document.getElementById('leaderboard-container');
                                 container.innerHTML = '';
-                                res.leaderboard.forEach((item, idx) => {
-                                    const div = document.createElement('div');
+                                res.leaderboard.forEach(function(item, idx) {
+                                    var div = document.createElement('div');
                                     div.className = 'leaderboard-item';
-                                    div.innerHTML = `<span>#${idx+1} ${item.first_name}</span><b>${item.balance.toFixed(2)} ETB</b>`;
+                                    div.innerHTML = '<span>#' + (idx+1) + ' ' + item.first_name + '</span><b>' + item.balance.toFixed(2) + ' ETB</b>';
                                     container.appendChild(div);
                                 });
                                 showView('leaderboard-view');
                             }
                         });
-                };
+                }
 
-                window.openSection = function(type) {
+                function openSection(type) {
                     if (type === 'support' && tg && tg.openTelegramLink) {
                         tg.openTelegramLink('https://t.me/merebbingosupport');
                     }
-                };
+                }
 
-                window.submitTelebirrSMS = function() {
-                    const smsText = document.getElementById('deposit-sms').value;
+                function submitTelebirrSMS() {
+                    var smsText = document.getElementById('deposit-sms').value;
                     fetch('/api/deposit-telebirr-sms', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, sms_text: smsText })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                };
+                }
 
-                window.submitWithdraw = function() {
-                    const phone = document.getElementById('withdraw-phone').value;
-                    const amount = parseFloat(document.getElementById('withdraw-amount').value);
+                function submitWithdraw() {
+                    var phone = document.getElementById('withdraw-phone').value;
+                    var amount = parseFloat(document.getElementById('withdraw-amount').value);
 
                     fetch('/api/withdraw', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, phone: phone, amount: amount })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                };
+                }
 
-                window.submitTransfer = function() {
-                    const receiver = document.getElementById('transfer-receiver').value;
-                    const amount = parseFloat(document.getElementById('transfer-amount').value);
+                function submitTransfer() {
+                    var receiver = document.getElementById('transfer-receiver').value;
+                    var amount = parseFloat(document.getElementById('transfer-amount').value);
 
                     fetch('/api/transfer', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sender_id: user.id, receiver: receiver, amount: amount })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                };
+                }
 
-                window.submitPromo = function() {
-                    const code = document.getElementById('promo-code-input').value;
+                function submitPromo() {
+                    var code = document.getElementById('promo-code-input').value;
                     fetch('/api/promo/redeem', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, code: code })
-                    }).then(r => r.json()).then(res => {
+                    }).then(function(r) { return r.json(); }).then(function(res) {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                };
+                }
             </script>
         </body>
         </html>
-    """)
+    """, bot_username=BOT_USERNAME)
 
 # ==========================================
-# USER SYNC & AGENT REFERRAL HANDLING
+# BACKEND APIS
 # ==========================================
 @app.route('/api/sync-user', methods=['POST'])
 def sync_user():
     data = request.json or {}
     telegram_id = data.get('telegram_id')
     first_name = data.get('first_name', 'Mereb')
-    start_param = str(data.get('start_param', '')).strip()
 
     if not telegram_id:
         return jsonify({"error": "telegram_id ያስፈልጋል!"}), 400
-
-    agent_id = None
-    if start_param.startswith('agent_'):
-        try:
-            agent_id = int(start_param.replace('agent_', ''))
-        except:
-            agent_id = None
 
     conn = get_db()
     cursor = conn.cursor()
     user = cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
 
     if not user:
-        cursor.execute('INSERT INTO users (telegram_id, first_name, agent_id) VALUES (?, ?, ?)', 
-                       (telegram_id, first_name, agent_id if agent_id != telegram_id else None))
+        cursor.execute('INSERT INTO users (telegram_id, first_name) VALUES (?, ?)', (telegram_id, first_name))
     else:
         cursor.execute('UPDATE users SET first_name = ? WHERE telegram_id = ?', (first_name, telegram_id))
 
@@ -770,21 +762,14 @@ def register_phone():
 
     return jsonify({"status": "success", "message": "ስልክ ቁጥር በስኬት ተመዝግቧል!"})
 
-# ==========================================
-# AGENT MANAGEMENT APIS
-# ==========================================
 @app.route('/api/agent/register', methods=['POST'])
 def register_agent():
     telegram_id = (request.json or {}).get('telegram_id')
-    if not telegram_id:
-        return jsonify({"error": "telegram_id ያስፈልጋል"}), 400
-
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET is_agent = 1 WHERE telegram_id = ?', (telegram_id,))
     conn.commit()
     conn.close()
-
     return jsonify({"status": "success", "message": "በስኬት ኤጀንት ሆነዋል!"})
 
 @app.route('/api/agent/stats', methods=['GET'])
@@ -792,7 +777,6 @@ def agent_stats():
     telegram_id = request.args.get('telegram_id')
     conn = get_db()
     cursor = conn.cursor()
-
     user = cursor.execute('SELECT is_agent, commission_balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
     if not user:
         conn.close()
@@ -808,20 +792,6 @@ def agent_stats():
         "commission_balance": user['commission_balance']
     })
 
-@app.route('/api/agent/share-link', methods=['POST'])
-def agent_share_link():
-    telegram_id = (request.json or {}).get('telegram_id')
-    agent_link = f"https://t.me/{BOT_USERNAME}/app?startapp=agent_{telegram_id}"
-    text = urllib.parse.quote("🎯 በመረብ ቢንጎ ይጫወቱ እና ያሸንፉ! በልዩ ኤጀንት ሊንክ ይመዝገቡ፡")
-    
-    return jsonify({
-        "status": "success", 
-        "share_link": f"https://t.me/share/url?url={agent_link}&text={text}"
-    })
-
-# ==========================================
-# BINGO CLAIM WITH 15% / 5% COMMISSION SPLIT
-# ==========================================
 @app.route('/api/game/claim-bingo', methods=['POST'])
 def claim_bingo():
     data = request.json or {}
@@ -843,14 +813,12 @@ def claim_bingo():
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "bingo_win", "game")', (winner_id, winner_reward))
 
     winner_user = cursor.execute('SELECT agent_id FROM users WHERE telegram_id = ?', (winner_id,)).fetchone()
-    
     if winner_user and winner_user['agent_id']:
         agent_id = winner_user['agent_id']
         agent_cut = total_pot * AGENT_COMMISSION_RATE
 
         cursor.execute('UPDATE users SET commission_balance = commission_balance + ?, balance = balance + ? WHERE telegram_id = ?', 
                        (agent_cut, agent_cut, agent_id))
-        cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "agent_commission_5pct", "referral")', (agent_id, agent_cut))
 
     conn.commit()
     conn.close()
@@ -861,9 +829,6 @@ def claim_bingo():
         "reward": winner_reward
     })
 
-# ==========================================
-# GROUP PLAY ROOM APIS
-# ==========================================
 @app.route('/api/group/create', methods=['POST'])
 def create_group():
     data = request.json or {}
@@ -873,15 +838,12 @@ def create_group():
     room_code = generate_room_code()
     conn = get_db()
     cursor = conn.cursor()
-
-    cursor.execute('INSERT INTO group_rooms (room_code, host_id, stake) VALUES (?, ?, ?)', 
-                   (room_code, telegram_id, stake))
+    cursor.execute('INSERT INTO group_rooms (room_code, host_id, stake) VALUES (?, ?, ?)', (room_code, telegram_id, stake))
     conn.commit()
     conn.close()
 
     share_text = f"🎮 የቡድን ጨዋታ ተከፍቷል! በ {stake} ETB ይጫወቱ።\nየቡድን ኮድ: {room_code}"
-    encoded = urllib.parse.quote(share_text)
-    share_link = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}/app?startapp={room_code}&text={encoded}"
+    share_link = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}/app?startapp={room_code}&text={urllib.parse.quote(share_text)}"
 
     return jsonify({"status": "success", "room_code": room_code, "stake": stake, "share_link": share_link})
 
@@ -900,9 +862,6 @@ def join_group():
 
     return jsonify({"status": "success", "room_code": room['room_code'], "stake": room['stake']})
 
-# ==========================================
-# GAME STATS & CARTELLA GENERATION
-# ==========================================
 @app.route('/api/game/stats', methods=['GET'])
 def game_stats():
     stake = float(request.args.get('stake', 10.0))
@@ -910,7 +869,6 @@ def game_stats():
 
     conn = get_db()
     cursor = conn.cursor()
-    
     player_count = cursor.execute('SELECT COUNT(DISTINCT telegram_id) as count FROM user_cards WHERE stake = ? AND room_code = ?', 
                                   (stake, room_code)).fetchone()['count']
     if player_count == 0: player_count = 1
@@ -955,9 +913,6 @@ def generate_card():
 
     return jsonify({"status": "success", "card": card, "cartella_num": cartella_num})
 
-# ==========================================
-# LEADERBOARD & PROFILE API
-# ==========================================
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
     telegram_id = request.args.get('telegram_id')
@@ -982,9 +937,6 @@ def get_leaderboard():
         "leaderboard": leaderboard_data
     })
 
-# ==========================================
-# WITHDRAW, TRANSFER, DEPOSIT & PROMO
-# ==========================================
 @app.route('/api/withdraw', methods=['POST'])
 def withdraw():
     data = request.json or {}
@@ -1002,15 +954,6 @@ def withdraw():
     if not user or (user['balance'] - amount) < MIN_REMAINING_BALANCE:
         conn.close()
         return jsonify({"error": f"ቢያንስ {MIN_REMAINING_BALANCE} ETB በቀሪነት መቅረት አለበት!"}), 400
-
-    today_spent = cursor.execute('''
-        SELECT SUM(amount) as total FROM transactions 
-        WHERE telegram_id = ? AND type IN ('withdraw', 'transfer_out') AND date(date) = date('now')
-    ''', (telegram_id,)).fetchone()['total'] or 0.0
-
-    if (today_spent + amount) > DAILY_LIMIT:
-        conn.close()
-        return jsonify({"error": f"የቀን የትራንዛክሽን ገደብ ({DAILY_LIMIT} ETB) አልፈዋል!"}), 400
 
     cursor.execute('UPDATE users SET phone_number = ?, balance = balance - ? WHERE telegram_id = ?', (phone, amount, telegram_id))
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "withdraw", "telebirr")', (telegram_id, amount))
