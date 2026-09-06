@@ -1,4 +1,4 @@
-From flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string
 import sqlite3
 import os
 import random
