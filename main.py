@@ -21,9 +21,9 @@ DAILY_LIMIT = 2000.0
 MIN_REMAINING_BALANCE = 50.0  
 
 # Commission Settings (Total 20% -> 15% Admin / 5% Agent)
-TOTAL_COMMISSION_RATE = 0.20  # 20% ጠቅላላ የቤት ኮሚሽን
-AGENT_COMMISSION_RATE = 0.05  # 5% ለኤጀንቱ
-ADMIN_COMMISSION_RATE = 0.15  # 15% ለዋናው አድሚን
+TOTAL_COMMISSION_RATE = 0.20
+AGENT_COMMISSION_RATE = 0.05
+ADMIN_COMMISSION_RATE = 0.15
 
 def get_db():
     conn = sqlite3.connect(DB_NAME)
@@ -34,7 +34,6 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. Users Table Create
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY, 
@@ -48,7 +47,6 @@ def init_db():
         )
     ''')
     
-    # የድሮው ዳታቤዝ ሳይጠፋ አዳዲስ ኮለሞችን በራስ-ሰር መጨመሪያ (Auto Migration)
     for col_name, col_type in [
         ("commission_balance", "REAL DEFAULT 0.0"),
         ("agent_id", "INTEGER"),
@@ -57,9 +55,8 @@ def init_db():
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except sqlite3.OperationalError:
-            pass  # ኮለምኑ አስቀድሞ ካለ ችግር አይፈጥርም
+            pass
 
-    # 2. Transactions Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +71,6 @@ def init_db():
         )
     ''')
     
-    # 3. User Cards Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_cards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +83,6 @@ def init_db():
         )
     ''')
 
-    # 4. Group Rooms Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS group_rooms (
             room_code TEXT PRIMARY KEY,
@@ -98,7 +93,6 @@ def init_db():
         )
     ''')
     
-    # 5. Promo Codes Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS promo_codes (
             code TEXT PRIMARY KEY,
@@ -173,8 +167,8 @@ def index():
             <div id="home-view" class="page-view active-view">
                 <div class="header">
                     <div>
-                        <h3 style="margin:0;">ሜረብ ቢንጎ</h3>
-                        <small id="user-display">Loading...</small>
+                        <h3 style="margin:0;">መረብ ቢንጎ</h3>
+                        <small id="user-display">Mereb</small>
                     </div>
                     <div class="balance-box">
                         ባላንስ: <b id="main-balance">0.00</b> ETB<br>
@@ -182,7 +176,6 @@ def index():
                     </div>
                 </div>
 
-                <!-- START እና PLAY ለየብቻ ተለያይተዋል -->
                 <div class="menu-grid">
                     <div class="menu-card" style="background:#00c853;" onclick="openModal('stake-modal')">🚀 START</div>
                     <div class="menu-card" style="background:#0288d1;" onclick="proceedToCartellaSelection('GLOBAL')">🎮 PLAY</div>
@@ -343,7 +336,7 @@ def index():
                 tg.ready();
                 tg.expand();
 
-                const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Demo User" };
+                const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Mereb" };
                 const startParam = tg.initDataUnsafe?.start_param || ""; 
 
                 let currentStake = 10;
@@ -351,36 +344,34 @@ def index():
                 let selectedCartella = null;
                 let timerInterval = null;
 
-                // Sync User with Error Catch (Loading እንዳይቆም የተስተካከለ)
+                // Loading የሚለውን በቅጽበት በስምህ/Mereb ለመተካት
+                document.getElementById('user-display').innerText = user.first_name || "Mereb";
+
+                // Sync User with Server
                 fetch('/api/sync-user', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         telegram_id: user.id, 
-                        first_name: user.first_name,
+                        first_name: user.first_name || "Mereb",
                         start_param: startParam 
                     })
                 })
-                .then(res => {
-                    if (!res.ok) throw new Error("Server error");
-                    return res.json();
-                })
+                .then(res => res.json())
                 .then(data => {
                     if(data.status === 'success'){
-                        document.getElementById('user-display').innerText = data.user.first_name || user.first_name;
+                        document.getElementById('user-display').innerText = data.user.first_name || user.first_name || "Mereb";
                         document.getElementById('main-balance').innerText = (data.user.balance || 0).toFixed(2);
                         document.getElementById('user-phone-disp').innerText = data.user.phone_number || "ያልተመዘገበ";
 
                         if(!data.user.phone_number) {
                             openModal('register-modal');
                         }
-                    } else {
-                        document.getElementById('user-display').innerText = user.first_name || "ተጫዋች";
                     }
                 })
                 .catch(err => {
                     console.error("Sync Error:", err);
-                    document.getElementById('user-display').innerText = user.first_name || "ተጫዋች";
+                    document.getElementById('user-display').innerText = user.first_name || "Mereb";
                 });
 
                 function registerPhone() {
@@ -558,12 +549,11 @@ def index():
                     }).then(r => r.json()).then(res => {
                         alert(res.message || res.error);
                         if(res.status === 'success') {
-                            document.getElementById('winner-text').innerText = user.first_name + " won " + res.reward + " ETB!";
+                            document.getElementById('winner-text').innerText = (user.first_name || "Mereb") + " won " + res.reward + " ETB!";
                         }
                     });
                 }
 
-                // ================= Agent Functions =================
                 function loadAgentDashboard() {
                     fetch('/api/agent/stats?telegram_id=' + user.id)
                         .then(r => r.json())
@@ -701,7 +691,7 @@ def index():
 def sync_user():
     data = request.json or {}
     telegram_id = data.get('telegram_id')
-    first_name = data.get('first_name', '')
+    first_name = data.get('first_name', 'Mereb')
     start_param = str(data.get('start_param', '')).strip()
 
     if not telegram_id:
@@ -799,7 +789,7 @@ def agent_stats():
 def agent_share_link():
     telegram_id = (request.json or {}).get('telegram_id')
     agent_link = f"https://t.me/{BOT_USERNAME}/app?startapp=agent_{telegram_id}"
-    text = urllib.parse.quote("🎯 በሜረብ ቢንጎ ይጫወቱ እና ያሸንፉ! በልዩ ኤጀንት ሊንክ ይመዝገቡ፡")
+    text = urllib.parse.quote("🎯 በመረብ ቢንጎ ይጫወቱ እና ያሸንፉ! በልዩ ኤጀንት ሊንክ ይመዝገቡ፡")
     
     return jsonify({
         "status": "success", 
@@ -824,20 +814,17 @@ def claim_bingo():
     if player_count == 0: player_count = 1
 
     total_pot = player_count * stake
-    winner_reward = total_pot * (1.0 - TOTAL_COMMISSION_RATE) # 80% ለአሸናፊው
+    winner_reward = total_pot * (1.0 - TOTAL_COMMISSION_RATE)
 
-    # 1. አሸናፊውን ሂሳብ ማስገባት
     cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (winner_reward, winner_id))
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "bingo_win", "game")', (winner_id, winner_reward))
 
-    # 2. የኮሚሽን ክፍፍል (15% Admin / 5% Agent)
     winner_user = cursor.execute('SELECT agent_id FROM users WHERE telegram_id = ?', (winner_id,)).fetchone()
     
     if winner_user and winner_user['agent_id']:
         agent_id = winner_user['agent_id']
-        agent_cut = total_pot * AGENT_COMMISSION_RATE  # 5% ለኤጀንቱ
+        agent_cut = total_pot * AGENT_COMMISSION_RATE
 
-        # የኤጀንቱን 5% ኮሚሽን ባላንስ ላይ መጨመር
         cursor.execute('UPDATE users SET commission_balance = commission_balance + ?, balance = balance + ? WHERE telegram_id = ?', 
                        (agent_cut, agent_cut, agent_id))
         cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "agent_commission_5pct", "referral")', (agent_id, agent_cut))
@@ -963,7 +950,7 @@ def get_leaderboard():
     return jsonify({
         "status": "success",
         "profile": {
-            "first_name": profile['first_name'] if profile else "--",
+            "first_name": profile['first_name'] if profile else "Mereb",
             "telegram_id": profile['telegram_id'] if profile else "--",
             "phone_number": profile['phone_number'] if profile else "ያልተመዘገበ",
             "balance": profile['balance'] if profile else 0.0,
