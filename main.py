@@ -5,35 +5,90 @@ import random
 
 app = Flask(__name__)
 
-# ዳታቤዝ ማዘጋጀት
 def init_db():
     conn = sqlite3.connect('mereb_bingo.db')
     cursor = conn.cursor()
-    
-    # ተጠቃሚዎች (Main Wallet, Commission, Phone, Language)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            telegram_id INTEGER PRIMARY KEY,
-            phone_number TEXT,
-            balance REAL DEFAULT 0.0,
-            commission_balance REAL DEFAULT 0.0,
-            coins REAL DEFAULT 0.0,
-            agent_id INTEGER,
-            language TEXT DEFAULT 'am'
-        )
-    ''')
-    
-    # ኤጀንቶች እና ሪፈራል
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS agents (
-            agent_id INTEGER PRIMARY KEY,
-            telegram_id INTEGER,
-            referral_code TEXT UNIQUE,
-            commission_balance REAL DEFAULT 0.0
-        )
-    ''')
-    
-    # የገንዘብ ዝውውር (Deposit/Withdraw/Transfer)
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, phone_number TEXT, balance REAL DEFAULT 0.0, commission_balance REAL DEFAULT 0.0)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/')
+def index():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="am">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mereb Bingo</title>
+        <style>
+            body { background: #121212; color: #fff; font-family: sans-serif; text-align: center; padding: 10px; }
+            .box { background: #1e1e1e; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: left; }
+            .btn { background: #e67e22; color: #fff; border: none; padding: 10px; border-radius: 5px; width: 100%; cursor: pointer; margin-top: 5px; }
+            input, select { padding: 8px; margin: 5px 0; width: 100%; background: #222; color: #fff; border: 1px solid #444; box-sizing: border-box; }
+        </style>
+    </head>
+    <body>
+        <h2>🎯 Mereb Bingo Mini App</h2>
+        <div class="box">
+            <h3>ምዝገባ እና መለያ</h3>
+            <input type="number" id="uid" placeholder="Telegram ID">
+            <input type="text" id="phone" placeholder="ስልክ ቁጥር (09...)">
+            <button class="btn" onclick="register()">ተመዝገብ (/start)</button>
+        </div>
+        <div class="box">
+            <h3>ዋና ሂሳብ (/balance)</h3>
+            <button class="btn" onclick="getBalance()">ሂሳብ አሳይ</button>
+            <p>Main Balance: <span id="bal">0.0</span> ብር</p>
+            <p>Commission: <span id="comm">0.0</span> ብር</p>
+        </div>
+        <script>
+            function register() {
+                let uid = document.getElementById('uid').value;
+                let phone = document.getElementById('phone').value;
+                fetch('/api/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({telegram_id: uid, phone_number: phone})
+                }).then(res => res.json()).then(data => alert(data.message));
+            }
+            function getBalance() {
+                let uid = document.getElementById('uid').value;
+                fetch('/api/account/' + uid).then(res => res.json()).then(data => {
+                    document.getElementById('bal').innerText = data.balance;
+                    document.getElementById('comm').innerText = data.commission_balance;
+                });
+            }
+        </script>
+    </body>
+    </html>
+    """)
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    conn = sqlite3.connect('mereb_bingo.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO users (telegram_id, phone_number) VALUES (?, ?)", (data.get('telegram_id'), data.get('phone_number')))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "በተሳካ ሁኔታ ተመዝግበዋል!"})
+
+@app.route('/api/account/<int:telegram_id>')
+def get_account(telegram_id):
+    conn = sqlite3.connect('mereb_bingo.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance, commission_balance FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return jsonify({"balance": row[0], "commission_balance": row[1]})
+    return jsonify({"balance": 0.0, "commission_balance": 0.0})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
