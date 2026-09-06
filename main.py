@@ -146,7 +146,7 @@ def index():
             <div id="home-view" class="page-view active-view">
                 <div class="header">
                     <div>
-                        <h3 style="margin:0;">ሜረብ ቢንጎ</h3>
+                        <h3 style="margin:0;">መረብ ቢንጎ</h3>
                         <small id="user-display">Loading...</small>
                     </div>
                     <div class="balance-box">
