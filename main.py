@@ -34,6 +34,7 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # 1. Users Table Create
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY, 
@@ -47,6 +48,18 @@ def init_db():
         )
     ''')
     
+    # የድሮው ዳታቤዝ ሳይጠፋ አዳዲስ ኮለሞችን በራስ-ሰር መጨመሪያ (Auto Migration)
+    for col_name, col_type in [
+        ("commission_balance", "REAL DEFAULT 0.0"),
+        ("agent_id", "INTEGER"),
+        ("is_agent", "INTEGER DEFAULT 0")
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # ኮለምኑ አስቀድሞ ካለ ችግር አይፈጥርም
+
+    # 2. Transactions Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +74,7 @@ def init_db():
         )
     ''')
     
+    # 3. User Cards Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_cards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +87,7 @@ def init_db():
         )
     ''')
 
+    # 4. Group Rooms Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS group_rooms (
             room_code TEXT PRIMARY KEY,
@@ -83,6 +98,7 @@ def init_db():
         )
     ''')
     
+    # 5. Promo Codes Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS promo_codes (
             code TEXT PRIMARY KEY,
@@ -166,15 +182,17 @@ def index():
                     </div>
                 </div>
 
+                <!-- START እና PLAY ለየብቻ ተለያይተዋል -->
                 <div class="menu-grid">
-                    <div class="menu-card" style="background:#00c853; grid-column: span 2;" onclick="openModal('stake-modal')">▶ START PLAY</div>
+                    <div class="menu-card" style="background:#00c853;" onclick="openModal('stake-modal')">🚀 START</div>
+                    <div class="menu-card" style="background:#0288d1;" onclick="proceedToCartellaSelection('GLOBAL')">🎮 PLAY</div>
                     <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit</div>
                     <div class="menu-card" onclick="openModal('withdraw-modal')">📤 Withdraw</div>
                     <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer</div>
                     <div class="menu-card" style="background:#ff9800;" onclick="loadAgentDashboard()">💼 Agent Panel</div>
                     <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code</div>
                     <div class="menu-card" onclick="loadLeaderboard()">🏆 Leaderboard</div>
-                    <div class="menu-card" onclick="openSection('support')">💬 Support</div>
+                    <div class="menu-card" style="grid-column: span 2;" onclick="openSection('support')">💬 Support</div>
                 </div>
             </div>
 
@@ -333,7 +351,7 @@ def index():
                 let selectedCartella = null;
                 let timerInterval = null;
 
-                // Sync User with Referral / Agent Check
+                // Sync User with Error Catch (Loading እንዳይቆም የተስተካከለ)
                 fetch('/api/sync-user', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -342,16 +360,27 @@ def index():
                         first_name: user.first_name,
                         start_param: startParam 
                     })
-                }).then(res => res.json()).then(data => {
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error("Server error");
+                    return res.json();
+                })
+                .then(data => {
                     if(data.status === 'success'){
-                        document.getElementById('user-display').innerText = data.user.first_name;
-                        document.getElementById('main-balance').innerText = data.user.balance.toFixed(2);
+                        document.getElementById('user-display').innerText = data.user.first_name || user.first_name;
+                        document.getElementById('main-balance').innerText = (data.user.balance || 0).toFixed(2);
                         document.getElementById('user-phone-disp').innerText = data.user.phone_number || "ያልተመዘገበ";
 
                         if(!data.user.phone_number) {
                             openModal('register-modal');
                         }
+                    } else {
+                        document.getElementById('user-display').innerText = user.first_name || "ተጫዋች";
                     }
+                })
+                .catch(err => {
+                    console.error("Sync Error:", err);
+                    document.getElementById('user-display').innerText = user.first_name || "ተጫዋች";
                 });
 
                 function registerPhone() {
@@ -790,7 +819,6 @@ def claim_bingo():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Get players count & total pot
     player_count = cursor.execute('SELECT COUNT(DISTINCT telegram_id) as count FROM user_cards WHERE stake = ? AND room_code = ?', 
                                   (stake, room_code)).fetchone()['count']
     if player_count == 0: player_count = 1
@@ -803,21 +831,16 @@ def claim_bingo():
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "bingo_win", "game")', (winner_id, winner_reward))
 
     # 2. የኮሚሽን ክፍፍል (15% Admin / 5% Agent)
-    # አሸናፊውን ያመጣው ኤጀንት ካለ ይፈተሻል
     winner_user = cursor.execute('SELECT agent_id FROM users WHERE telegram_id = ?', (winner_id,)).fetchone()
     
     if winner_user and winner_user['agent_id']:
         agent_id = winner_user['agent_id']
         agent_cut = total_pot * AGENT_COMMISSION_RATE  # 5% ለኤጀንቱ
-        admin_cut = total_pot * ADMIN_COMMISSION_RATE  # 15% ለአድሚኑ
 
         # የኤጀንቱን 5% ኮሚሽን ባላንስ ላይ መጨመር
         cursor.execute('UPDATE users SET commission_balance = commission_balance + ?, balance = balance + ? WHERE telegram_id = ?', 
                        (agent_cut, agent_cut, agent_id))
         cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "agent_commission_5pct", "referral")', (agent_id, agent_cut))
-    else:
-        # ኤጀንት ከሌለ ሙሉው 20% ለአድሚን ገቢ ይሆናል
-        admin_cut = total_pot * TOTAL_COMMISSION_RATE
 
     conn.commit()
     conn.close()
@@ -846,7 +869,7 @@ def create_group():
     conn.commit()
     conn.close()
 
-    share_text = f"🎮 የቢንጎ ቡድን ጨዋታ ተከፍቷል! በ {stake} ETB ይጫወቱ።\nየቡድን ኮድ: {room_code}"
+    share_text = f"🎮 የቡድን ጨዋታ ተከፍቷል! በ {stake} ETB ይጫወቱ።\nየቡድን ኮድ: {room_code}"
     encoded = urllib.parse.quote(share_text)
     share_link = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}/app?startapp={room_code}&text={encoded}"
 
