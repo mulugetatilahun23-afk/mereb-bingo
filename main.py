@@ -19,9 +19,7 @@ MERCHANT_NAME = "MULUGETA TILAHUN"
 DAILY_LIMIT = 2000.0  
 MIN_REMAINING_BALANCE = 50.0  
 
-TOTAL_COMMISSION_RATE = 0.20
-AGENT_COMMISSION_RATE = 0.05
-ADMIN_COMMISSION_RATE = 0.15
+HOUSE_COMMISSION_RATE = 0.20 # 20% የሲስተሙ ኮሚሽን
 
 def get_db():
     conn = sqlite3.connect(DB_NAME)
@@ -32,28 +30,16 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Simple clean Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY, 
             first_name TEXT,
             phone_number TEXT, 
             balance REAL DEFAULT 0.0, 
-            commission_balance REAL DEFAULT 0.0,
-            agent_id INTEGER,
-            is_agent INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    for col_name, col_type in [
-        ("commission_balance", "REAL DEFAULT 0.0"),
-        ("agent_id", "INTEGER"),
-        ("is_agent", "INTEGER DEFAULT 0")
-    ]:
-        try:
-            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
-        except sqlite3.OperationalError:
-            pass
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
@@ -178,7 +164,7 @@ def index():
 
                 var user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) 
                              ? tg.initDataUnsafe.user 
-                             : { id: 12345678, first_name: "Mereb" };
+                             : { id: 12345678, first_name: "Mereb Player" };
 
                 var BOT_USER_NAME = "{{ bot_username }}";
                 var currentStake = 10;
@@ -205,19 +191,20 @@ def index():
                     if (target) target.classList.add('active-view');
                 }
 
+                // Clean Direct Invite Link Feature
                 function shareInviteLink() {
-                    var inviteLink = "https://t.me/" + BOT_USER_NAME + "/app?startapp=ref_" + user.id;
-                    var text = encodeURIComponent("🎯 በመረብ ቢንጎ ይጫወቱ እና ያሸንፉ! በኔ ሊንክ ይመዝገቡ፡");
-                    var shareUrl = "https://t.me/share/url?url=" + encodeURIComponent(inviteLink) + "&text=" + text;
+                    var botLink = "https://t.me/" + BOT_USER_NAME + "?start=ref_" + user.id;
+                    var shareText = encodeURIComponent("🎯 በመረብ ቢንጎ ይጫወቱ እና ያሸንፉ! የቴሌግራም ቦቱን በመጫን ይጀምሩ፡");
+                    var shareUrl = "https://t.me/share/url?url=" + encodeURIComponent(botLink) + "&text=" + shareText;
 
                     if (tg && tg.openTelegramLink) {
                         tg.openTelegramLink(shareUrl);
                     } else {
                         if (navigator.clipboard) {
-                            navigator.clipboard.writeText(inviteLink);
-                            alert("የግብዣ ሊንክ ተቀድቷል (Copied):\n" + inviteLink);
+                            navigator.clipboard.writeText(botLink);
+                            alert("የግብዣ ሊንክ ተቀድቷል (Copied):\n" + botLink);
                         } else {
-                            alert("የግብዣ ሊንክ:\n" + inviteLink);
+                            alert("የግብዣ ሊንክ:\n" + botLink);
                         }
                     }
                 }
@@ -242,12 +229,11 @@ def index():
                     <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit</div>
                     <div class="menu-card" onclick="openModal('withdraw-modal')">📤 Withdraw</div>
                     <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer</div>
-                    <div class="menu-card" style="background:#ff9800;" onclick="loadAgentDashboard()">💼 Agent Panel</div>
                     <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code</div>
                     <div class="menu-card" onclick="loadLeaderboard()">🏆 Leaderboard</div>
-                    <div class="menu-card" style="grid-column: span 2;" onclick="openSection('support')">💬 Support</div>
+                    <div class="menu-card" onclick="openSection('support')">💬 Support</div>
                     
-                    <!-- NEW INVITE BUTTON AT THE BOTTOM -->
+                    <!-- SIMPLE INVITE BUTTON AT THE BOTTOM -->
                     <div class="menu-card" style="grid-column: span 2; background: #8e44ad; color: #ffffff;" onclick="shareInviteLink()">👥 Invite (ጓደኛ ጋብዝ)</div>
                 </div>
             </div>
@@ -317,26 +303,6 @@ def index():
                 </div>
             </div>
 
-            <div id="agent-modal" class="modal">
-                <h3 style="margin-top:0; color:#ff9800;">💼 የኤጀንት ዳሽቦርድ (Agent Panel)</h3>
-                
-                <div id="agent-active-section" style="display:none;">
-                    <div class="profile-card">
-                        <div class="profile-row"><span>የኤጀንት ሁኔታ:</span> <b style="color:#00c853;">የተረጋገጠ ኤጀንት ✔</b></div>
-                        <div class="profile-row"><span>የተጋበዙ ተጫዋቾች:</span> <b id="agent-total-users">0</b></div>
-                        <div class="profile-row"><span>የተገኘ 5% ኮሚሽን:</span> <b id="agent-comm-earned" style="color:#ffb300;">0.00 ETB</b></div>
-                    </div>
-                    <button style="background:#00c853;" onclick="shareInviteLink()">🔗 የኤጀንት ሊንክ አጋራ (Share Agent Link)</button>
-                </div>
-
-                <div id="agent-register-section" style="display:none; text-align:center;">
-                    <p style="font-size:13px; color:#ccc;">እስካሁን ኤጀንት አልሆኑም። ኤጀንት በመሆን በርስዎ ሊንክ በሚገቡ ተጫዋቾች <b>5% ኮሚሽን</b> ማግኘት ይጀምሩ!</p>
-                    <button style="background:#ff9800;" onclick="registerAsAgent()">💼 አሁኑኑ ኤጀንት ይሁኑ (Become Agent)</button>
-                </div>
-
-                <button style="background:#e53935; margin-top:10px;" onclick="closeModal('agent-modal')">ዝጋ</button>
-            </div>
-
             <div id="leaderboard-view" class="page-view">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <button style="width:auto; margin:0; padding:6px 12px;" onclick="showView('home-view')">← Back</button>
@@ -349,7 +315,6 @@ def index():
                     <div class="profile-row"><span>Telegram ID:</span> <b id="prof-id">--</b></div>
                     <div class="profile-row"><span>ስልክ:</span> <b id="prof-phone">--</b></div>
                     <div class="profile-row"><span>ዋና ባላንስ:</span> <b id="prof-bal">0.00 ETB</b></div>
-                    <div class="profile-row"><span>የኮሚሽን ባላንስ (5%):</span> <b id="prof-comm">0.00 ETB</b></div>
                 </div>
 
                 <h4>🏆 ከፍተኛ አሸናፊዎች (Top Players)</h4>
@@ -590,38 +555,6 @@ def index():
                     });
                 }
 
-                function loadAgentDashboard() {
-                    fetch('/api/agent/stats?telegram_id=' + user.id)
-                        .then(function(r) { return r.json(); })
-                        .then(function(res) {
-                            if(res.status === 'success') {
-                                openModal('agent-modal');
-                                if(res.is_agent) {
-                                    document.getElementById('agent-active-section').style.display = 'block';
-                                    document.getElementById('agent-register-section').style.display = 'none';
-                                    document.getElementById('agent-total-users').innerText = res.total_referred_users;
-                                    document.getElementById('agent-comm-earned').innerText = res.commission_balance.toFixed(2) + " ETB";
-                                } else {
-                                    document.getElementById('agent-active-section').style.display = 'none';
-                                    document.getElementById('agent-register-section').style.display = 'block';
-                                }
-                            }
-                        });
-                }
-
-                function registerAsAgent() {
-                    fetch('/api/agent/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ telegram_id: user.id })
-                    }).then(function(r) { return r.json(); }).then(function(res) {
-                        if(res.status === 'success') {
-                            alert("እንኳን ደስ አለዎት! አሁን ኤጀንት ሆነዋል።");
-                            loadAgentDashboard();
-                        }
-                    });
-                }
-
                 function loadLeaderboard() {
                     fetch('/api/leaderboard?telegram_id=' + user.id)
                         .then(function(r) { return r.json(); })
@@ -631,7 +564,6 @@ def index():
                                 document.getElementById('prof-id').innerText = res.profile.telegram_id;
                                 document.getElementById('prof-phone').innerText = res.profile.phone_number || "ያልተመዘገበ";
                                 document.getElementById('prof-bal').innerText = res.profile.balance.toFixed(2) + " ETB";
-                                document.getElementById('prof-comm').innerText = res.profile.commission_balance.toFixed(2) + " ETB";
 
                                 var container = document.getElementById('leaderboard-container');
                                 container.innerHTML = '';
@@ -739,9 +671,7 @@ def sync_user():
             "telegram_id": updated_user['telegram_id'],
             "first_name": updated_user['first_name'],
             "phone_number": updated_user['phone_number'],
-            "balance": updated_user['balance'],
-            "commission_balance": updated_user['commission_balance'],
-            "is_agent": updated_user['is_agent']
+            "balance": updated_user['balance']
         }
     })
 
@@ -762,36 +692,6 @@ def register_phone():
 
     return jsonify({"status": "success", "message": "ስልክ ቁጥር በስኬት ተመዝግቧል!"})
 
-@app.route('/api/agent/register', methods=['POST'])
-def register_agent():
-    telegram_id = (request.json or {}).get('telegram_id')
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET is_agent = 1 WHERE telegram_id = ?', (telegram_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "message": "በስኬት ኤጀንት ሆነዋል!"})
-
-@app.route('/api/agent/stats', methods=['GET'])
-def agent_stats():
-    telegram_id = request.args.get('telegram_id')
-    conn = get_db()
-    cursor = conn.cursor()
-    user = cursor.execute('SELECT is_agent, commission_balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
-    if not user:
-        conn.close()
-        return jsonify({"error": "ተጠቃሚው አልተገኘም"}), 404
-
-    referred_count = cursor.execute('SELECT COUNT(*) as count FROM users WHERE agent_id = ?', (telegram_id,)).fetchone()['count']
-    conn.close()
-
-    return jsonify({
-        "status": "success",
-        "is_agent": bool(user['is_agent']),
-        "total_referred_users": referred_count,
-        "commission_balance": user['commission_balance']
-    })
-
 @app.route('/api/game/claim-bingo', methods=['POST'])
 def claim_bingo():
     data = request.json or {}
@@ -807,18 +707,10 @@ def claim_bingo():
     if player_count == 0: player_count = 1
 
     total_pot = player_count * stake
-    winner_reward = total_pot * (1.0 - TOTAL_COMMISSION_RATE)
+    winner_reward = total_pot * (1.0 - HOUSE_COMMISSION_RATE)
 
     cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (winner_reward, winner_id))
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method) VALUES (?, ?, "bingo_win", "game")', (winner_id, winner_reward))
-
-    winner_user = cursor.execute('SELECT agent_id FROM users WHERE telegram_id = ?', (winner_id,)).fetchone()
-    if winner_user and winner_user['agent_id']:
-        agent_id = winner_user['agent_id']
-        agent_cut = total_pot * AGENT_COMMISSION_RATE
-
-        cursor.execute('UPDATE users SET commission_balance = commission_balance + ?, balance = balance + ? WHERE telegram_id = ?', 
-                       (agent_cut, agent_cut, agent_id))
 
     conn.commit()
     conn.close()
@@ -843,7 +735,7 @@ def create_group():
     conn.close()
 
     share_text = f"🎮 የቡድን ጨዋታ ተከፍቷል! በ {stake} ETB ይጫወቱ።\nየቡድን ኮድ: {room_code}"
-    share_link = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}/app?startapp={room_code}&text={urllib.parse.quote(share_text)}"
+    share_link = f"https://t.me/share/url?url=https://t.me/{BOT_USERNAME}?start={room_code}&text={urllib.parse.quote(share_text)}"
 
     return jsonify({"status": "success", "room_code": room_code, "stake": stake, "share_link": share_link})
 
@@ -874,7 +766,7 @@ def game_stats():
     if player_count == 0: player_count = 1
 
     total_pot = player_count * stake
-    derash = total_pot * (1.0 - TOTAL_COMMISSION_RATE)
+    derash = total_pot * (1.0 - HOUSE_COMMISSION_RATE)
     conn.close()
 
     return jsonify({"players": player_count, "derash": derash, "stake": stake})
@@ -931,8 +823,7 @@ def get_leaderboard():
             "first_name": profile['first_name'] if profile else "Mereb",
             "telegram_id": profile['telegram_id'] if profile else "--",
             "phone_number": profile['phone_number'] if profile else "ያልተመዘገበ",
-            "balance": profile['balance'] if profile else 0.0,
-            "commission_balance": profile['commission_balance'] if profile else 0.0
+            "balance": profile['balance'] if profile else 0.0
         },
         "leaderboard": leaderboard_data
     })
