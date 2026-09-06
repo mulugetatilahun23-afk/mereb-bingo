@@ -1,27 +1,29 @@
 from flask import Flask, request, jsonify, render_template_string
 import sqlite3
 import os
-import random
-import json
 import re
-import urllib.parse
+import json
+import random
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Environment Variables
-BOT_TOKEN = os.environ.get("8967099088:AAEpqyu1ZMb8THzF40ZSwFUZxq43dH-oPYA", "")
+# ==========================================
+# CONFIGURATION
+# ==========================================
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # የእርስዎን Telegram ID እዚህ ያግኙ
-DB_NAME = 'mereb_bingo.db'
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # የእርስዎን Telegram ID እዚህ ይተኩ
 
+DB_NAME = 'mereb_bingo.db'
 MERCHANT_PHONE = "0923410403"
 MERCHANT_NAME = "MULUGETA TILAHUN"
 REFERRAL_BONUS = 5.0
-DAILY_LIMIT = 2000.0  
-MIN_REMAINING_BALANCE = 50.0  
-COMMISSION_RATE = 0.20  
+COMMISSION_RATE = 0.20
 
+# ==========================================
+# DATABASE SETUP & AUTO-MIGRATION
+# ==========================================
 def get_db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -31,6 +33,7 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Users Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY, 
@@ -39,10 +42,22 @@ def init_db():
             balance REAL DEFAULT 0.0, 
             commission_balance REAL DEFAULT 0.0,
             agent_id INTEGER,
-            is_admin INTEGER DEFAULT 0
+            is_admin INTEGER DEFAULT 0,
+            is_agent INTEGER DEFAULT 0
         )
     ''')
-    
+
+    # ነባር DB ላይ ኮለሞች ከሌሉ አውቶማቲክ ማስተካከያ (Migration)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_agent INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,18 +107,24 @@ def init_db():
 
 init_db()
 
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
 def is_admin_user(telegram_id):
+    if not telegram_id:
+        return False
     return int(telegram_id) == ADMIN_ID
 
+# ==========================================
+# PUBLIC & HEALTH ENDPOINTS
+# ==========================================
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "alive", "project": "Mereb Bingo"}), 200
 
 # ==========================================
-# ADMIN ENDPOINTS (የአድሚን መቆጣጠሪያዎች)
+# ADMIN ENDPOINTS
 # ==========================================
-
-# 1. የአድሚን ዳሽቦርድ መረጃ (የተጠቃሚ ብዛት፣ የተቀመጠ ብር፣ ወዘተ)
 @app.route('/api/admin/dashboard', methods=['POST'])
 def admin_dashboard():
     data = request.json or {}
@@ -129,7 +150,6 @@ def admin_dashboard():
         "pending_withdrawals": pending_withdrawals
     })
 
-# 2. ለተጠቃሚ በእጅ ሂሳብ መሙላት (Manual Deposit)
 @app.route('/api/admin/add-balance', methods=['POST'])
 def admin_add_balance():
     data = request.json or {}
@@ -159,7 +179,6 @@ def admin_add_balance():
 
     return jsonify({"status": "success", "message": f"ለተጠቃሚ {target_id} መጠን {amount} ETB በስኬት ተጨምሯል!"})
 
-# 3. የያዘውን የተቀማጭ/የወጪ ጥያቄ ማጽደቅ (Approve Pending Transaction)
 @app.route('/api/admin/approve-transaction', methods=['POST'])
 def admin_approve_tx():
     data = request.json or {}
@@ -187,7 +206,6 @@ def admin_approve_tx():
 
     return jsonify({"status": "success", "message": f"ትራንዛክሽን #{tx_id} በስኬት ጸድቋል!"})
 
-# 4. አዲስ ፕሮሞ ኮድ መፍጠር (Create Promo Code)
 @app.route('/api/admin/create-promo', methods=['POST'])
 def admin_create_promo():
     data = request.json or {}
@@ -214,132 +232,7 @@ def admin_create_promo():
         return jsonify({"error": "ይህ ፕሮሞ ኮድ አስቀድሞ አለ!"}), 400
 
 # ==========================================
-# FRONTEND MINI APP (USER / FRONTEND)
-# ==========================================
-@app.route('/')
-def index():
-    return render_template_string("""
-        <!DOCTYPE html>
-        <html lang="am">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Mereb Bingo</title>
-            <script src="https://telegram.org/js/telegram-web-app.js"></script>
-            <style>
-                body { background-color: #0d141e; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 12px; }
-                .header { display: flex; align-items: center; justify-content: space-between; background: #16212e; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
-                .balance-box { font-size: 13px; color: #4bc0c0; }
-                .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .menu-card { background: #16212e; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; }
-                .menu-card:active { background: #233346; }
-                .page-view { display: none; }
-                .active-view { display: block; }
-                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; }
-                input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; box-sizing: border-box; }
-                button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; }
-                .stake-opts { display: flex; gap: 10px; margin: 10px 0; }
-                .stake-btn { background: #1e2c3d; border: 1px solid #324760; color: #fff; flex: 1; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: bold; }
-                .stake-btn.selected { background: #00c853; border-color: #00c853; }
-                .cartella-header { display: flex; justify-content: space-between; background: #16212e; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; text-align: center; }
-                .cartella-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; max-height: 350px; overflow-y: auto; background: #111a26; padding: 8px; border-radius: 8px; }
-                .cartella-num { background: #1c2938; border: 1px solid #2a3d54; color: #fff; text-align: center; padding: 8px 0; border-radius: 50%; font-size: 11px; font-weight: bold; cursor: pointer; }
-                .cartella-num.selected { background: #ff5252; border-color: #ff5252; }
-                .bingo-card { background: #16212e; padding: 12px; border-radius: 12px; max-width: 340px; margin: 0 auto; border: 1px solid #253549; }
-                .bingo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
-                .bingo-cell { background: #223144; color: #fff; text-align: center; height: 48px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 6px; font-size: 15px; }
-                .bingo-cell.header-cell { background: #2d415a; color: #4bc0c0; font-size: 16px; font-weight: 900; }
-                .bingo-cell.star-cell { background: #00c853; color: #fff; font-size: 20px; }
-                .winner-banner { background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 12px; border-radius: 10px; text-align: center; margin-bottom: 15px; border: 1px solid #ffb300; }
-            </style>
-        </head>
-        <body>
-            <div id="home-view" class="page-view active-view">
-                <div class="header">
-                    <div>
-                        <h3 style="margin:0;">መረብ ቢንጎ</h3>
-                        <small id="user-display">Loading...</small>
-                    </div>
-                    <div class="balance-box">
-                        ወጪ ሊደረግ የሚችል: <b id="main-balance">0.00</b> ETB
-                    </div>
-                </div>
-
-                <div class="menu-grid">
-                    <div class="menu-card" onclick="openModal('stake-modal')">🎮 Play (/play)</div>
-                    <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit (/deposit)</div>
-                    <div class="menu-card" onclick="openModal('withdraw-modal')">📤 Withdraw (/withdraw)</div>
-                    <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer (/transfer)</div>
-                    <div class="menu-card" onclick="openSection('invite')">👥 Invite (/invite)</div>
-                    <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code (/promo)</div>
-                </div>
-            </div>
-
-            <!-- Deposit Modal -->
-            <div id="deposit-modal" class="modal">
-                <h4>በቴሌብር ሂሳብ መሙያ</h4>
-                <p style="font-size: 12px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን SMS እዚህ ይለጥፉ።</p>
-                <textarea id="deposit-sms" rows="4" placeholder="ከቴሌብር የደረሰዎትን ሙሉ SMS ይለጥፉ..."></textarea>
-                <button onclick="submitTelebirrSMS()">ማረጋገጫ ላክ (Verify)</button>
-                <button style="background:#e53935;" onclick="closeModal('deposit-modal')">ዝጋ</button>
-            </div>
-
-            <!-- Stake Selection Modal -->
-            <div id="stake-modal" class="modal">
-                <h4 style="margin-top:0;">የመወራረጃ መጠን ይምረጡ (Stake)</h4>
-                <div class="stake-opts">
-                    <button class="stake-btn selected" id="stake-10" onclick="setStake(10)">10 ETB</button>
-                    <button class="stake-btn" id="stake-20" onclick="setStake(20)">20 ETB</button>
-                    <button class="stake-btn" id="stake-30" onclick="setStake(30)">30 ETB</button>
-                </div>
-                <button onclick="proceedToCartellaSelection()">ቀጥል (Select Cartella)</button>
-                <button style="background:#e53935;" onclick="closeModal('stake-modal')">ተመለስ</button>
-            </div>
-
-            <script>
-                const tg = window.Telegram.WebApp;
-                tg.ready();
-                tg.expand();
-
-                const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Demo User" };
-                let currentStake = 10;
-
-                fetch('/api/sync-user', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telegram_id: user.id, first_name: user.first_name })
-                }).then(res => res.json()).then(data => {
-                    if(data.status === 'success'){
-                        document.getElementById('user-display').innerText = data.user.first_name;
-                        document.getElementById('main-balance').innerText = data.user.balance.toFixed(2);
-                    }
-                });
-
-                function openModal(id) { document.getElementById(id).style.display = 'block'; }
-                function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-                function setStake(amount) { currentStake = amount; }
-                function proceedToCartellaSelection() { alert("ጨዋታው በቅርብ ይጀምራል!"); }
-
-                function submitTelebirrSMS() {
-                    const smsText = document.getElementById('deposit-sms').value;
-                    if(!smsText.trim()) return alert("እባክዎን SMS ያስገቡ!");
-
-                    fetch('/api/deposit-telebirr-sms', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ telegram_id: user.id, sms_text: smsText })
-                    }).then(r => r.json()).then(res => {
-                        alert(res.message || res.error);
-                        if(res.status === 'success') location.reload();
-                    });
-                }
-            </script>
-        </body>
-        </html>
-    """)
-
-# ==========================================
-# USER SYNC & TRANSACTIONS
+# USER SERVICES & TRANSACTIONS
 # ==========================================
 @app.route('/api/sync-user', methods=['POST'])
 def sync_user():
@@ -358,8 +251,8 @@ def sync_user():
 
     if not user:
         cursor.execute('''
-            INSERT INTO users (telegram_id, first_name, agent_id)
-            VALUES (?, ?, ?)
+            INSERT INTO users (telegram_id, first_name, agent_id, is_agent)
+            VALUES (?, ?, ?, 0)
         ''', (telegram_id, first_name, agent_id))
 
         if agent_id and agent_id != telegram_id:
@@ -381,7 +274,8 @@ def sync_user():
             "telegram_id": updated_user['telegram_id'],
             "first_name": updated_user['first_name'],
             "balance": updated_user['balance'],
-            "commission_balance": updated_user['commission_balance']
+            "commission_balance": updated_user['commission_balance'],
+            "is_agent": updated_user['is_agent'] if 'is_agent' in updated_user.keys() else 0
         }
     })
 
@@ -442,6 +336,172 @@ def deposit_telebirr_sms():
         conn.rollback()
         conn.close()
         return jsonify({"error": f"ስህተት ተከሰተ፡ {str(e)}"}), 500
+
+@app.route('/api/use-promo', methods=['POST'])
+def use_promo():
+    data = request.json or {}
+    telegram_id = data.get('telegram_id')
+    code = str(data.get('code', '')).strip().upper()
+
+    if not telegram_id or not code:
+        return jsonify({"error": "ትክክለኛ መረጃ ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    promo = cursor.execute('SELECT * FROM promo_codes WHERE code = ? AND used = 0', (code,)).fetchone()
+    if not promo:
+        conn.close()
+        return jsonify({"error": "የተሳሳተ ወይም ጥቅም ላይ የዋለ ፕሮሞ ኮድ!"}), 400
+
+    cursor.execute('UPDATE promo_codes SET used = 1 WHERE code = ?', (code,))
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (promo['reward'], telegram_id))
+    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "promo", ?, "approved")', (telegram_id, promo['reward'], code))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! {promo['reward']} ETB ቦነስ አግኝተዋል።"})
+
+# ==========================================
+# FRONTEND MINI APP RENDER
+# ==========================================
+@app.route('/')
+def index():
+    return render_template_string("""
+        <!DOCTYPE html>
+        <html lang="am">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Mereb Bingo</title>
+            <script src="https://telegram.org/js/telegram-web-app.js"></script>
+            <style>
+                body { background-color: #0d141e; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 12px; }
+                .header { display: flex; align-items: center; justify-content: space-between; background: #16212e; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
+                .balance-box { font-size: 13px; color: #4bc0c0; }
+                .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+                .menu-card { background: #16212e; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; }
+                .menu-card:active { background: #233346; }
+                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; }
+                input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; box-sizing: border-box; }
+                button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; }
+                .stake-opts { display: flex; gap: 10px; margin: 10px 0; }
+                .stake-btn { background: #1e2c3d; border: 1px solid #324760; color: #fff; flex: 1; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: bold; }
+                .stake-btn.selected { background: #00c853; border-color: #00c853; }
+            </style>
+        </head>
+        <body>
+            <div id="home-view">
+                <div class="header">
+                    <div>
+                        <h3 style="margin:0;">መረብ ቢንጎ</h3>
+                        <small id="user-display">Loading...</small>
+                    </div>
+                    <div class="balance-box">
+                        ወጪ ሊደረግ የሚችል: <b id="main-balance">0.00</b> ETB
+                    </div>
+                </div>
+
+                <div class="menu-grid">
+                    <div class="menu-card" onclick="openModal('stake-modal')">🎮 Play (/play)</div>
+                    <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit (/deposit)</div>
+                    <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code (/promo)</div>
+                </div>
+            </div>
+
+            <!-- Deposit Modal -->
+            <div id="deposit-modal" class="modal">
+                <h4>በቴሌብር ሂሳብ መሙያ</h4>
+                <p style="font-size: 12px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን SMS እዚህ ይለጥፉ።</p>
+                <textarea id="deposit-sms" rows="4" placeholder="ከቴሌብር የደረሰዎትን ሙሉ SMS ይለጥፉ..."></textarea>
+                <button onclick="submitTelebirrSMS()">ማረጋገጫ ላክ (Verify)</button>
+                <button style="background:#e53935;" onclick="closeModal('deposit-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Promo Modal -->
+            <div id="promo-modal" class="modal">
+                <h4>ፕሮሞ ኮድ ያስገቡ</h4>
+                <input type="text" id="promo-code-input" placeholder="ለምሳሌ: BINGO2026">
+                <button onclick="submitPromoCode()">ኮዱን ተቀምጥ</button>
+                <button style="background:#e53935;" onclick="closeModal('promo-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Stake Selection Modal -->
+            <div id="stake-modal" class="modal">
+                <h4 style="margin-top:0;">የመወራረጃ መጠን ይምረጡ (Stake)</h4>
+                <div class="stake-opts">
+                    <button class="stake-btn selected" id="stake-10" onclick="setStake(10)">10 ETB</button>
+                    <button class="stake-btn" id="stake-20" onclick="setStake(20)">20 ETB</button>
+                    <button class="stake-btn" id="stake-30" onclick="setStake(30)">30 ETB</button>
+                </div>
+                <button onclick="alert('ጨዋታው በቅርብ ይጀምራል!')">ቀጥል</button>
+                <button style="background:#e53935;" onclick="closeModal('stake-modal')">ተመለስ</button>
+            </div>
+
+            <script>
+                const tg = window.Telegram.WebApp;
+                tg.ready();
+                tg.expand();
+
+                const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Demo User" };
+                let currentStake = 10;
+
+                fetch('/api/sync-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: user.id, first_name: user.first_name })
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error("Server Error: " + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    if(data.status === 'success'){
+                        document.getElementById('user-display').innerText = data.user.first_name;
+                        document.getElementById('main-balance').innerText = data.user.balance.toFixed(2);
+                    }
+                })
+                .catch(err => {
+                    console.error("Sync Error:", err);
+                    document.getElementById('user-display').innerText = user.first_name || "ተጠቃሚ";
+                });
+
+                function openModal(id) { document.getElementById(id).style.display = 'block'; }
+                function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+                function setStake(amount) { currentStake = amount; }
+
+                function submitTelebirrSMS() {
+                    const smsText = document.getElementById('deposit-sms').value;
+                    if(!smsText.trim()) return alert("እባክዎን SMS ያስገቡ!");
+
+                    fetch('/api/deposit-telebirr-sms', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegram_id: user.id, sms_text: smsText })
+                    }).then(r => r.json()).then(res => {
+                        alert(res.message || res.error);
+                        if(res.status === 'success') location.reload();
+                    });
+                }
+
+                function submitPromoCode() {
+                    const code = document.getElementById('promo-code-input').value;
+                    if(!code.trim()) return alert("እባክዎን ኮድ ያስገቡ!");
+
+                    fetch('/api/use-promo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegram_id: user.id, code: code })
+                    }).then(r => r.json()).then(res => {
+                        alert(res.message || res.error);
+                        if(res.status === 'success') location.reload();
+                    });
+                }
+            </script>
+        </body>
+        </html>
+    """)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
