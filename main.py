@@ -8,12 +8,11 @@ import urllib.parse
 
 app = Flask(__name__)
 
-# Environment Variables (ለ GitHub ደህንነት ሲባል ከ env ይወሰዳሉ)
+# Environment Variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
 DB_NAME = 'mereb_bingo.db'
 
-# የክፍያ ተቀባይ መረጃዎች
 MERCHANT_PHONE = "0923410403"
 MERCHANT_NAME = "MULUGETA TILAHUN"
 REFERRAL_BONUS = 5.0
@@ -27,7 +26,6 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. የተጫዋቾች ሰንጠረዥ
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             telegram_id INTEGER PRIMARY KEY, 
@@ -39,7 +37,6 @@ def init_db():
         )
     ''')
     
-    # 2. የክፍያዎች ሰንጠረዥ
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,18 +51,17 @@ def init_db():
         )
     ''')
     
-    # 3. የካርድ መረጃዎች ሰንጠረዥ
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_cards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
+            cartella_number INTEGER,
             stake REAL,
             card_data TEXT,
             game_id INTEGER DEFAULT 1
         )
     ''')
     
-    # 4. የፕሮሞ ኮድ ሰንጠረዥ
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS promo_codes (
             code TEXT PRIMARY KEY,
@@ -74,7 +70,6 @@ def init_db():
         )
     ''')
 
-    # 5. የቢንጎ ጨዋታዎች ሰንጠረዥ
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,15 +84,12 @@ def init_db():
 
 init_db()
 
-# ==========================================
-# 1. RENDER KEEP-ALIVE
-# ==========================================
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "alive", "project": "Mereb Bingo"}), 200
 
 # ==========================================
-# 2. MINI APP FRONTEND
+# MINI APP FRONTEND WITH GAME UI
 # ==========================================
 @app.route('/')
 def index():
@@ -110,52 +102,139 @@ def index():
             <title>Mereb Bingo Mini App</title>
             <script src="https://telegram.org/js/telegram-web-app.js"></script>
             <style>
-                body { background-color: #17212b; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 15px; }
-                .header { display: flex; align-items: center; justify-content: space-between; background: #242f3d; padding: 12px; border-radius: 10px; margin-bottom: 15px; }
-                .balance-box { font-size: 14px; color: #4bc0c0; }
+                body { background-color: #0f1721; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 12px; }
+                .header { display: flex; align-items: center; justify-content: space-between; background: #1a2432; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
+                .balance-box { font-size: 13px; color: #4bc0c0; }
                 .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .menu-card { background: #242f3d; padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #2b394a; }
-                .menu-card:active { background: #2b394a; }
-                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #1e2c3a; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); }
+                .menu-card { background: #1a2432; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #283648; }
+                .menu-card:active { background: #283648; }
+                
+                /* Modal & Views */
+                .page-view { display: none; }
+                .active-view { display: block; }
+                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #182330; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; }
                 input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; box-sizing: border-box; }
                 button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; }
+                
+                /* Stake Selector Buttons */
+                .stake-opts { display: flex; gap: 10px; margin: 10px 0; }
+                .stake-btn { background: #24303f; border: 1px solid #3b4c61; color: #fff; flex: 1; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: bold; }
+                .stake-btn.selected { background: #00c853; border-color: #00c853; }
+
+                /* 300 Cartella Selection Grid */
+                .cartella-header { display: flex; justify-content: space-between; background: #1a2432; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; text-align: center; }
+                .cartella-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; max-height: 350px; overflow-y: auto; background: #141d28; padding: 8px; border-radius: 8px; }
+                .cartella-num { background: #1f2b3a; border: 1px solid #2d3d52; color: #fff; text-align: center; padding: 8px 0; border-radius: 50%; font-size: 11px; font-weight: bold; cursor: pointer; }
+                .cartella-num.selected { background: #ff5252; border-color: #ff5252; }
+                
+                /* Bingo Board Grid (5x5) */
+                .bingo-card { background: #1a2432; padding: 12px; border-radius: 12px; max-width: 340px; margin: 0 auto; border: 1px solid #29384b; }
+                .bingo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+                .bingo-cell { background: #253345; color: #fff; text-align: center; height: 50px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 6px; font-size: 15px; }
+                .bingo-cell.header-cell { background: #334458; color: #4bc0c0; font-size: 16px; font-weight: 900; }
+                .bingo-cell.star-cell { background: #00c853; color: #fff; font-size: 20px; }
+                .bingo-cell.marked { background: #ffb300; color: #000; }
+                .bingo-cell.drawn-green { background: #00c853; color: #fff; }
+                
+                /* Winner Banner */
+                .winner-banner { background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 12px; border-radius: 10px; text-align: center; margin-bottom: 15px; border: 1px solid #ffb300; }
             </style>
         </head>
         <body>
-            <div class="header">
-                <div>
-                    <h3 style="margin:0;">ሜረብ ቢንጎ</h3>
-                    <small id="user-display">Loading...</small>
+
+            <!-- Home Dashboard -->
+            <div id="home-view" class="page-view active-view">
+                <div class="header">
+                    <div>
+                        <h3 style="margin:0;">ሜረብ ቢንጎ</h3>
+                        <small id="user-display">Loading...</small>
+                    </div>
+                    <div class="balance-box">
+                        ወጪ ሊደረግ የሚችል: <b id="main-balance">0.00</b> ETB
+                    </div>
                 </div>
-                <div class="balance-box">
-                    ወጪ ሊደረግ የሚችል: <b id="main-balance">0.00</b> ETB
+
+                <div class="menu-grid">
+                    <div class="menu-card" onclick="openModal('stake-modal')">🎮 Play (/play)</div>
+                    <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit (/deposit)</div>
+                    <div class="menu-card" onclick="openSection('withdraw')">📤 Withdraw (/withdraw)</div>
+                    <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer (/transfer)</div>
+                    <div class="menu-card" onclick="openSection('invite')">👥 Invite (/invite)</div>
+                    <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code (/promo)</div>
+                    <div class="menu-card" onclick="openSection('leaderboard')">🏆 Leaderboard</div>
+                    <div class="menu-card" onclick="openSection('support')">💬 Support</div>
                 </div>
             </div>
 
-            <div class="menu-grid">
-                <div class="menu-card" onclick="openSection('play')">🎮 Play (/play)</div>
-                <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit (/deposit)</div>
-                <div class="menu-card" onclick="openSection('withdraw')">📤 Withdraw (/withdraw)</div>
-                <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer (/transfer)</div>
-                <div class="menu-card" onclick="openSection('invite')">👥 Invite (/invite)</div>
-                <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code (/promo)</div>
-                <div class="menu-card" onclick="openSection('leaderboard')">🏆 Leaderboard</div>
-                <div class="menu-card" onclick="openSection('support')">💬 Support</div>
+            <!-- Stake Selection Modal (10, 20, 30 ETB) -->
+            <div id="stake-modal" class="modal">
+                <h4 style="margin-top:0;">የመወራረጃ መጠን ይምረጡ (Stake)</h4>
+                <div class="stake-opts">
+                    <button class="stake-btn selected" id="stake-10" onclick="setStake(10)">10 ETB</button>
+                    <button class="stake-btn" id="stake-20" onclick="setStake(20)">20 ETB</button>
+                    <button class="stake-btn" id="stake-30" onclick="setStake(30)">30 ETB</button>
+                </div>
+                <button onclick="proceedToCartellaSelection()">ቀጥል (Select Cartella)</button>
+                <button style="background:#e53935;" onclick="closeModal('stake-modal')">ተመለስ</button>
             </div>
 
-            <!-- Deposit Modal (Telebirr SMS Verification) -->
+            <!-- Cartella Selection View (1-300) -->
+            <div id="cartella-view" class="page-view">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <button style="width:auto; margin:0; padding:6px 12px;" onclick="showView('home-view')">← Back</button>
+                    <span><b>Select Your Cartella</b> (1-300)</span>
+                </div>
+
+                <div class="cartella-header">
+                    <div>TIMER<br><b id="timer-val">27</b></div>
+                    <div>DERASH<br><b id="derash-val">32</b></div>
+                    <div>STAKE<br><b id="disp-stake">10</b></div>
+                    <div>PLAYERS<br><b>64</b></div>
+                </div>
+
+                <div class="cartella-grid" id="cartella-container">
+                    <!-- 1 to 300 Buttons generated by JS -->
+                </div>
+                <button style="margin-top:12px;" onclick="confirmCartellaSelection()">ካርቴላ አረጋግጥ (Join Game)</button>
+            </div>
+
+            <!-- Active Bingo Game View -->
+            <div id="game-view" class="page-view">
+                <div class="winner-banner" id="winner-box">
+                    <h3 style="margin:0; color:#ffb300;">🎉🏆🎉 BINGO!</h3>
+                    <p style="margin:5px 0 0 0;" id="winner-text">Abel won 512 ETB</p>
+                </div>
+
+                <div class="bingo-card">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:#aaa; margin-bottom:5px;">
+                        <span id="card-title">Cartella #213</span>
+                        <span id="player-owner">Owner: You</span>
+                    </div>
+
+                    <div class="bingo-grid" id="bingo-board">
+                        <!-- 5x5 Grid Rendered Here -->
+                    </div>
+                </div>
+
+                <div style="text-align:center; margin-top:20px;">
+                    <small style="color:#aaa;">NEXT GAME</small>
+                    <h2 style="margin:0; color:#ffb300;" id="next-game-timer">3</h2>
+                    <small>Starting in a few seconds...</small>
+                </div>
+            </div>
+
+            <!-- Deposit Modal -->
             <div id="deposit-modal" class="modal">
                 <h4>በቴሌብር ሂሳብ መሙያ</h4>
-                <p style="font-size: 12px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን መልእክት (SMS) ከታች ባለው ሳጥን ውስጥ ለጥፈው ያረጋግጡ።</p>
-                <textarea id="deposit-sms" rows="4" placeholder="ከቴሌብር የደረሰዎትን ሙሉ የጽሁፍ መልእክት (SMS) እዚህ ይለጥፉ..."></textarea>
-                <button onclick="submitTelebirrSMS()">ማረጋገጫ ላክ (Verify Deposit)</button>
+                <p style="font-size: 12px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን SMS እዚህ ይለጥፉ።</p>
+                <textarea id="deposit-sms" rows="4" placeholder="ከቴሌብር የደረሰዎትን ሙሉ SMS ይለጥፉ..."></textarea>
+                <button onclick="submitTelebirrSMS()">ማረጋገጫ ላክ (Verify)</button>
                 <button style="background:#e53935;" onclick="closeModal('deposit-modal')">ዝጋ</button>
             </div>
 
             <!-- Transfer Modal -->
             <div id="transfer-modal" class="modal">
-                <h4>Transfer from Main Wallet</h4>
-                <p>Enter recipient's Telegram ID or Phone:</p>
+                <h4>Transfer Money</h4>
                 <input type="text" id="transfer-receiver" placeholder="የተቀባይ ID ወይም ስልክ">
                 <input type="number" id="transfer-amount" placeholder="የገንዘብ መጠን (ETB)">
                 <button onclick="submitTransfer()">አስተላልፍ (Transfer)</button>
@@ -176,18 +255,14 @@ def index():
                 tg.expand();
 
                 const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Demo User" };
+                let currentStake = 10;
+                let selectedCartella = null;
 
-                const urlParams = new URLSearchParams(window.location.search);
-                const agentId = urlParams.get('startapp') || urlParams.get('start');
-
+                // User Sync
                 fetch('/api/sync-user', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        telegram_id: user.id,
-                        first_name: user.first_name,
-                        agent_id: agentId ? parseInt(agentId.replace('ref_', '')) : null
-                    })
+                    body: JSON.stringify({ telegram_id: user.id, first_name: user.first_name })
                 }).then(res => res.json()).then(data => {
                     if(data.status === 'success'){
                         document.getElementById('user-display').innerText = data.user.first_name;
@@ -195,8 +270,93 @@ def index():
                     }
                 });
 
+                function showView(viewId) {
+                    document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active-view'));
+                    document.getElementById(viewId).classList.add('active-view');
+                }
+
                 function openModal(id) { document.getElementById(id).style.display = 'block'; }
                 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+                function setStake(amount) {
+                    currentStake = amount;
+                    document.querySelectorAll('.stake-btn').forEach(btn => btn.classList.remove('selected'));
+                    document.getElementById('stake-' + amount).classList.add('selected');
+                }
+
+                function proceedToCartellaSelection() {
+                    closeModal('stake-modal');
+                    document.getElementById('disp-stake').innerText = currentStake;
+                    render300Cartellas();
+                    showView('cartella-view');
+                }
+
+                function render300Cartellas() {
+                    const container = document.getElementById('cartella-container');
+                    container.innerHTML = '';
+                    for (let i = 1; i <= 300; i++) {
+                        const div = document.createElement('div');
+                        div.className = 'cartella-num' + (selectedCartella === i ? ' selected' : '');
+                        div.innerText = i;
+                        div.onclick = () => selectSingleCartella(i);
+                        container.appendChild(div);
+                    }
+                }
+
+                function selectSingleCartella(num) {
+                    selectedCartella = num;
+                    render300Cartellas();
+                }
+
+                function confirmCartellaSelection() {
+                    if (!selectedCartella) return alert("እባክዎን 1 ካርቴላ ይምረጡ!");
+
+                    fetch('/api/game/generate-card', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegram_id: user.id, cartella_num: selectedCartella, stake: currentStake })
+                    }).then(r => r.json()).then(res => {
+                        if (res.status === 'success') {
+                            renderBingoBoard(res.card, selectedCartella);
+                            showView('game-view');
+                        } else {
+                            alert(res.error || "ስህተት ተከሰተ!");
+                        }
+                    });
+                }
+
+                function renderBingoBoard(cardData, cartellaNum) {
+                    document.getElementById('card-title').innerText = "Cartella #" + cartellaNum;
+                    const board = document.getElementById('bingo-board');
+                    board.innerHTML = '';
+
+                    const headers = ['B', 'I', 'N', 'G', 'O'];
+                    headers.forEach(h => {
+                        const cell = document.createElement('div');
+                        cell.className = 'bingo-cell header-cell';
+                        cell.innerText = h;
+                        board.appendChild(cell);
+                    });
+
+                    for (let row = 0; row < 5; row++) {
+                        headers.forEach(col => {
+                            const val = cardData[col][row];
+                            const cell = document.createElement('div');
+                            
+                            if (val === '★' || val === 'FREE') {
+                                cell.className = 'bingo-cell star-cell';
+                                cell.innerText = '★';
+                            } else {
+                                cell.className = 'bingo-cell';
+                                cell.innerText = val;
+                                // Sample highlight effect as in screenshot 9113.jpg
+                                if (row === 2 && col === 'B') cell.classList.add('marked');
+                                if (row === 1 && col === 'G') cell.classList.add('drawn-green');
+                            }
+                            board.appendChild(cell);
+                        });
+                    }
+                }
 
                 function openSection(type) {
                     if (type === 'invite') {
@@ -214,7 +374,7 @@ def index():
 
                 function submitTelebirrSMS() {
                     const smsText = document.getElementById('deposit-sms').value;
-                    if(!smsText.trim()) return alert("እባክዎን የቴሌብር SMS መልእክት ያስገቡ!");
+                    if(!smsText.trim()) return alert("እባክዎን SMS ያስገቡ!");
 
                     fetch('/api/deposit-telebirr-sms', {
                         method: 'POST',
@@ -257,7 +417,7 @@ def index():
     """)
 
 # ==========================================
-# 3. USER SYNC & REFERRAL LOGIC
+# USER SYNC
 # ==========================================
 @app.route('/api/sync-user', methods=['POST'])
 def sync_user():
@@ -304,7 +464,48 @@ def sync_user():
     })
 
 # ==========================================
-# 4. AUTOMATIC TELEBIRR SMS VERIFICATION
+# GENERATE BINGO CARD (B-I-N-G-O 1-75 & Center Star)
+# ==========================================
+@app.route('/api/game/generate-card', methods=['POST'])
+def generate_card():
+    data = request.json or {}
+    telegram_id = data.get('telegram_id')
+    cartella_num = data.get('cartella_num')
+    stake = float(data.get('stake', 10.0))
+
+    if not telegram_id or not cartella_num:
+        return jsonify({"error": "መረጃው አልተሟላም!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
+    if not user or user['balance'] < stake:
+        conn.close()
+        return jsonify({"error": "በቂ ባላንስ የሎትም! እባክዎን አስቀድመው ሂሳብ ይሙሉ (Deposit)"}), 400
+
+    # 1. B-I-N-G-O (1 to 75 numbers generator)
+    card = {
+        'B': random.sample(range(1, 16), 5),    # 1 - 15
+        'I': random.sample(range(16, 31), 5),   # 16 - 30
+        'N': random.sample(range(31, 46), 5),   # 31 - 45
+        'G': random.sample(range(46, 61), 5),   # 46 - 60
+        'O': random.sample(range(61, 76), 5)    # 61 - 75
+    }
+    # Center Free Cell with Star
+    card['N'][2] = '★'
+
+    cursor.execute('UPDATE users SET balance = balance - ? WHERE telegram_id = ?', (stake, telegram_id))
+    cursor.execute('INSERT INTO user_cards (telegram_id, cartella_number, stake, card_data) VALUES (?, ?, ?, ?)', 
+                   (telegram_id, cartella_num, stake, json.dumps(card)))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "card": card, "cartella_num": cartella_num})
+
+# ==========================================
+# AUTOMATIC TELEBIRR SMS VERIFICATION
 # ==========================================
 @app.route('/api/deposit-telebirr-sms', methods=['POST'])
 def deposit_telebirr_sms():
@@ -315,18 +516,15 @@ def deposit_telebirr_sms():
     if not telegram_id or not sms_text:
         return jsonify({"error": "ትክክለኛ መረጃ አላስገቡም!"}), 400
 
-    # 1. መልእክቱ ለ Mulugeta Tilahun (0923410403) መላኩን ማረጋገጥ
     if MERCHANT_PHONE not in sms_text and MERCHANT_NAME not in sms_text.upper():
-        return jsonify({"error": f"የተሳሳተ የቴሌብር SMS! ክፍያው የተላከው ወደ {MERCHANT_PHONE} ({MERCHANT_NAME}) መሆኑን ያረጋግጡ።"}), 400
+        return jsonify({"error": f"የተሳሳተ SMS! ክፍያው የተላከው ወደ {MERCHANT_PHONE} ({MERCHANT_NAME}) መሆኑን ያረጋግጡ።"}), 400
 
-    # 2. የትራንዛክሽን ቁጥር (Transaction ID) በ Regex ማውጣት (ለምሳሌ፡ 10A2B3C4D5 ወይም ተመሳሳይ ፎርማት)
     tx_match = re.search(r'\b([A-Z0-9]{10,})\b', sms_text.upper())
     if not tx_match:
         return jsonify({"error": "በትራንስክሪፕቱ ላይ የትራንዛክሽን ቁጥር ማግኘት አልተቻለም!"}), 400
     
     tx_id = tx_match.group(1)
 
-    # 3. የገንዘብ መጠን ማውጣት (ETB / ብር)
     amount_match = re.search(r'(?:ETB|ብር)\s*([\d\.]+)|([\d\.]+)\s*(?:ETB|ብር)', sms_text, re.IGNORECASE)
     if not amount_match:
         return jsonify({"error": "የክፍያውን የገንዘብ መጠን ማረጋገጥ አልተቻለም!"}), 400
@@ -340,13 +538,11 @@ def deposit_telebirr_sms():
     conn = get_db()
     cursor = conn.cursor()
 
-    # 4. የትራንዛክሽን ቁጥሩ ቀደም ሲል ጥቅም ላይ መዋሉን ማረጋገጥ
     existing = cursor.execute('SELECT id FROM transactions WHERE tx_id = ?', (tx_id,)).fetchone()
     if existing:
         conn.close()
         return jsonify({"error": "ይህ የትራንዛክሽን ቁጥር ቀደም ሲል ጥቅም ላይ ውሏል!"}), 400
 
-    # 5. ሂሳቡን ማጽደቅ እና ዳታቤዝ ላይ መጨመር
     try:
         cursor.execute('''
             INSERT INTO transactions (telegram_id, tx_id, amount, type, method, status, raw_sms)
@@ -370,7 +566,7 @@ def deposit_telebirr_sms():
         return jsonify({"error": f"ስህተት ተከሰተ፡ {str(e)}"}), 500
 
 # ==========================================
-# 5. WALLET TRANSFER
+# WALLET TRANSFER & PROMO
 # ==========================================
 @app.route('/api/transfer', methods=['POST'])
 def transfer_money():
@@ -408,9 +604,6 @@ def transfer_money():
 
     return jsonify({"status": "success", "message": f"{amount} ETB በስኬት ተላክቷል!"})
 
-# ==========================================
-# 6. SHARE LINK & PROMO CODES
-# ==========================================
 @app.route('/api/share-link', methods=['POST'])
 def share_link():
     data = request.json or {}
@@ -445,42 +638,6 @@ def redeem_promo():
     conn.close()
 
     return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! {promo['reward']} ETB ቦነስ አግኝተዋል።"})
-
-# ==========================================
-# 7. SERVER-SIDE BINGO ENGINE
-# ==========================================
-@app.route('/api/game/create-card', methods=['POST'])
-def create_card():
-    data = request.json or {}
-    telegram_id = data.get('telegram_id')
-    stake = float(data.get('stake', 10.0))
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
-    if not user or user['balance'] < stake:
-        conn.close()
-        return jsonify({"error": "በቂ ባላንስ የሎትም!"}), 400
-
-    cursor.execute('UPDATE users SET balance = balance - ? WHERE telegram_id = ?', (stake, telegram_id))
-
-    card = {
-        'B': random.sample(range(1, 16), 5),
-        'I': random.sample(range(16, 31), 5),
-        'N': random.sample(range(31, 46), 5),
-        'G': random.sample(range(46, 61), 5),
-        'O': random.sample(range(61, 76), 5)
-    }
-    card['N'][2] = 'FREE'
-
-    cursor.execute('INSERT INTO user_cards (telegram_id, stake, card_data) VALUES (?, ?, ?)', 
-                   (telegram_id, stake, json.dumps(card)))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "success", "card": card})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
