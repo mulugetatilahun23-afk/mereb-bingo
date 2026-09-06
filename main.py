@@ -224,8 +224,8 @@ def index():
                 </div>
 
                 <div class="menu-grid">
-                    <div class="menu-card" style="background:#00c853;" onclick="openModal('stake-modal')">🚀 START</div>
-                    <div class="menu-card" style="background:#0288d1;" onclick="proceedToCartellaSelection('GLOBAL')">🎮 PLAY</div>
+                    <!-- START ተወግዶ PLAY ቁልፍ ብቻ ሙሉ ስፋቱን ይዞ ተስተካክሏል -->
+                    <div class="menu-card" style="grid-column: span 2; background:#0288d1; font-size:16px;" onclick="openModal('stake-modal')">🎮 PLAY</div>
                     <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit</div>
                     <div class="menu-card" onclick="openModal('withdraw-modal')">📤 Withdraw</div>
                     <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer</div>
