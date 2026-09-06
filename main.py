@@ -1275,3 +1275,140 @@ def generate_cards():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+from flask import Flask, request, jsonify, render_template_string
+import sqlite3
+import os
+import random
+
+app = Flask(__name__)
+
+def init_db():
+    conn = sqlite3.connect('mereb_bingo.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, phone_number TEXT, balance REAL DEFAULT 0.0, commission_balance REAL DEFAULT 0.0)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/')
+def index():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="am">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mereb Bingo Mini App</title>
+        <!-- የቴሌግራም ዌብ አፕ ስክሪፕት -->
+        <script src="https://telegram.org/js/telegram-web-app.js"></script>
+        <style>
+            body { background: #121212; color: #fff; font-family: sans-serif; text-align: center; padding: 10px; margin: 0; }
+            .box { background: #1e1e1e; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: left; border: 1px solid #333; }
+            .btn { background: #e67e22; color: #fff; border: none; padding: 10px; border-radius: 5px; width: 100%; cursor: pointer; font-size: 14px; margin-top: 5px; }
+            .btn:hover { background: #d35400; }
+            input, select { padding: 9px; margin: 5px 0; width: 100%; background: #222; color: #fff; border: 1px solid #444; box-sizing: border-box; border-radius: 5px; }
+            .info { color: #2ecc71; font-size: 13px; font-weight: bold; margin-bottom: 8px; }
+        </style>
+    </head>
+    <body>
+        <h2>🎯 Mereb Bingo Mini App</h2>
+        
+        <div class="box">
+            <h3>👤 መለያ እና ሂሳብ</h3>
+            <div class="info" id="userInfo">ቴሌግራም ID በመፈለግ ላይ...</div>
+            <button class="btn" onclick="loadAccount()">ቀሪ ሂሳብ አሳይ (/balance)</button>
+            <p>Main Balance: <span id="bal" style="color:#2ecc71;">0.00</span> ብር</p>
+            <p>Commission: <span id="comm" style="color:#f1c40f;">0.00</span> ብር</p>
+        </div>
+
+        <div class="box">
+            <h3>💳 ገንዘብ ገቢ ማድረግ (/deposit)</h3>
+            <input type="number" id="depAmount" placeholder="የገንዘብ መጠን (ብር)">
+            <select id="depMethod">
+                <option value="Telebirr">ቴሌብር (0923410403)</option>
+                <option value="CBE">ንግድ ባንክ (1000149356138)</option>
+            </select>
+            <button class="btn" onclick="makeDeposit()">ክፍያ ላክ</button>
+        </div>
+
+        <script>
+            let telegramId = null;
+
+            // አፑ ሲከፈት የቴሌግራም ID በራስ ሰር መቀበል
+            window.onload = function() {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    const tg = window.Telegram.WebApp;
+                    tg.expand();
+                    if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                        telegramId = tg.initDataUnsafe.user.id;
+                        document.getElementById('userInfo').innerText = "የተያያዘው ቴሌግራም ID: " + telegramId;
+                        loadAccount();
+                    } else {
+                        // ቦት ውስጥ ሳይሆን ከብራውዘር ከተከፈተ ለፈተና የሚሆን ዱሚ ID
+                        telegramId = 12345678;
+                        document.getElementById('userInfo').innerText = "Test Mode (ID: 12345678)";
+                        loadAccount();
+                    }
+                }
+            };
+
+            function loadAccount() {
+                if(!telegramId) return;
+                fetch('/api/account/' + telegramId)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('bal').innerText = data.balance;
+                    document.getElementById('comm').innerText = data.commission_balance;
+                });
+            }
+
+            function makeDeposit() {
+                let amount = document.getElementById('depAmount').value;
+                let method = document.getElementById('depMethod').value;
+                if(!amount) return alert('እባክዎ የገንዘብ መጠን ያስገቡ');
+
+                fetch('/api/deposit', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({telegram_id: telegramId, amount: parseFloat(amount), method: method})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message);
+                    loadAccount();
+                });
+            }
+        </script>
+    </body>
+    </html>
+    """)
+
+@app.route('/api/account/<int:telegram_id>')
+def get_account(telegram_id):
+    conn = sqlite3.connect('mereb_bingo.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance, commission_balance FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return jsonify({"balance": row[0], "commission_balance": row[1]})
+    return jsonify({"balance": 0.0, "commission_balance": 0.0})
+
+@app.route('/api/deposit', methods=['POST'])
+def deposit():
+    data = request.json
+    telegram_id = data.get('telegram_id')
+    amount = data.get('amount')
+    method = data.get('method')
+    
+    conn = sqlite3.connect('mereb_bingo.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (telegram_id) VALUES (?)", (telegram_id,))
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amount, telegram_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": f"{amount} ብር በ {method} ተሳክቷል!"})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
