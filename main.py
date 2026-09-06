@@ -5,7 +5,15 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return """
+    <html>
+        <head><title>Mereb Bingo</title></head>
+        <body style="background-color: #121212; color: white; text-align: center; padding-top: 50px; font-family: sans-serif;">
+            <h1>Mereb Bingo Mini App is Live!</h1>
+            <p>ሰርቨሩ በትክክል እየሰራ ነው። አሁን ጨዋታውን ማቀናበር እንችላለን።</p>
+        </body>
+    </html>
+    """
 
 @app.route('/api/play', methods=['POST'])
 def play_game():
