@@ -13,7 +13,7 @@ app = Flask(__name__)
 # ==========================================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # የእርስዎን Telegram ID እዚህ ይተኩ
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # Telegram ID እዚህ ይተኩ
 
 DB_NAME = 'mereb_bingo.db'
 MERCHANT_PHONE = "0923410403"
@@ -123,115 +123,6 @@ def health():
     return jsonify({"status": "alive", "project": "Mereb Bingo"}), 200
 
 # ==========================================
-# ADMIN ENDPOINTS
-# ==========================================
-@app.route('/api/admin/dashboard', methods=['POST'])
-def admin_dashboard():
-    data = request.json or {}
-    admin_id = data.get('admin_id')
-
-    if not is_admin_user(admin_id):
-        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    total_users = cursor.execute('SELECT COUNT(*) as count FROM users').fetchone()['count']
-    total_balance = cursor.execute('SELECT SUM(balance) as total FROM users').fetchone()['total'] or 0.0
-    pending_deposits = cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE type='deposit' AND status='pending'").fetchone()['count']
-    pending_withdrawals = cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE type='withdraw' AND status='pending'").fetchone()['count']
-
-    conn.close()
-    return jsonify({
-        "status": "success",
-        "total_users": total_users,
-        "total_user_balance": total_balance,
-        "pending_deposits": pending_deposits,
-        "pending_withdrawals": pending_withdrawals
-    })
-
-@app.route('/api/admin/add-balance', methods=['POST'])
-def admin_add_balance():
-    data = request.json or {}
-    admin_id = data.get('admin_id')
-    target_id = data.get('target_telegram_id')
-    amount = float(data.get('amount', 0))
-
-    if not is_admin_user(admin_id):
-        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
-
-    if not target_id or amount <= 0:
-        return jsonify({"error": "ትክክለኛ የተጠቃሚ ID እና የገንዘብ መጠን ያስገቡ!"}), 400
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    user = cursor.execute('SELECT telegram_id FROM users WHERE telegram_id = ?', (target_id,)).fetchone()
-    if not user:
-        conn.close()
-        return jsonify({"error": "ተጠቃሚው አልተገኘም!"}), 404
-
-    cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, target_id))
-    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "manual_deposit", "admin", "approved")', (target_id, amount))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "success", "message": f"ለተጠቃሚ {target_id} መጠን {amount} ETB በስኬት ተጨምሯል!"})
-
-@app.route('/api/admin/approve-transaction', methods=['POST'])
-def admin_approve_tx():
-    data = request.json or {}
-    admin_id = data.get('admin_id')
-    tx_id = data.get('tx_id')
-
-    if not is_admin_user(admin_id):
-        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    tx = cursor.execute('SELECT * FROM transactions WHERE id = ? AND status = "pending"', (tx_id,)).fetchone()
-    if not tx:
-        conn.close()
-        return jsonify({"error": "የተጠየቀው ትራንዛክሽን አልተገኘም ወይም ጸድቋል!"}), 404
-
-    if tx['type'] == 'deposit':
-        cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (tx['amount'], tx['telegram_id']))
-    
-    cursor.execute('UPDATE transactions SET status = "approved" WHERE id = ?', (tx_id,))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "success", "message": f"ትራንዛክሽን #{tx_id} በስኬት ጸድቋል!"})
-
-@app.route('/api/admin/create-promo', methods=['POST'])
-def admin_create_promo():
-    data = request.json or {}
-    admin_id = data.get('admin_id')
-    code = str(data.get('code', '')).strip().upper()
-    reward = float(data.get('reward', 0))
-
-    if not is_admin_user(admin_id):
-        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
-
-    if not code or reward <= 0:
-        return jsonify({"error": "ትክክለኛ ኮድ እና የቦነስ መጠን ያስገቡ!"}), 400
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute('INSERT INTO promo_codes (code, reward) VALUES (?, ?)', (code, reward))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "success", "message": f"ፕሮሞ ኮድ '{code}' በ {reward} ETB ቦነስ ተፈጥሯል!"})
-    except sqlite3.IntegrityError:
-        conn.close()
-        return jsonify({"error": "ይህ ፕሮሞ ኮድ አስቀድሞ አለ!"}), 400
-
-# ==========================================
 # USER SERVICES & TRANSACTIONS
 # ==========================================
 @app.route('/api/sync-user', methods=['POST'])
@@ -337,6 +228,70 @@ def deposit_telebirr_sms():
         conn.close()
         return jsonify({"error": f"ስህተት ተከሰተ፡ {str(e)}"}), 500
 
+@app.route('/api/withdraw', methods=['POST'])
+def withdraw():
+    data = request.json or {}
+    telegram_id = data.get('telegram_id')
+    amount = float(data.get('amount', 0))
+    phone = data.get('phone', '')
+
+    if not telegram_id or amount <= 0 or not phone:
+        return jsonify({"error": "ትክክለኛ መረጃ ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
+    if not user or user['balance'] < amount:
+        conn.close()
+        return jsonify({"error": "በቂ የሂሳብ መጠን የሎትም!"}), 400
+
+    cursor.execute('UPDATE users SET balance = balance - ? WHERE telegram_id = ?', (amount, telegram_id))
+    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "withdraw", ?, "pending")', (telegram_id, amount, phone))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": "የወጪ ጥያቄዎ በቀጣይነት ተመዝግቧል። በአድሚኑ ተመርምሮ ይለቀቃል!"})
+
+@app.route('/api/transfer', methods=['POST'])
+def transfer():
+    data = request.json or {}
+    sender_id = data.get('telegram_id')
+    receiver_id = data.get('receiver_id')
+    amount = float(data.get('amount', 0))
+
+    if not sender_id or not receiver_id or amount <= 0:
+        return jsonify({"error": "ትክክለኛ መረጃ ያስገቡ!"}), 400
+
+    if str(sender_id) == str(receiver_id):
+        return jsonify({"error": "ወደ ራስዎ ማስተላለፍ አይችሉም!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    sender = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (sender_id,)).fetchone()
+    receiver = cursor.execute('SELECT telegram_id FROM users WHERE telegram_id = ?', (receiver_id,)).fetchone()
+
+    if not sender or sender['balance'] < amount:
+        conn.close()
+        return jsonify({"error": "በቂ የሂሳብ መጠን የሎትም!"}), 400
+
+    if not receiver:
+        conn.close()
+        return jsonify({"error": "የተቀባዩ አካውንት አልተገኘም!"}), 404
+
+    cursor.execute('UPDATE users SET balance = balance - ? WHERE telegram_id = ?', (amount, sender_id))
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, receiver_id))
+
+    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "transfer_out", ?, "approved")', (sender_id, amount, receiver_id))
+    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "transfer_in", ?, "approved")', (receiver_id, amount, sender_id))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": f"{amount} ETB ለተጠቃሚ {receiver_id} በስኬት አስተላልፈዋል!"})
+
 @app.route('/api/use-promo', methods=['POST'])
 def use_promo():
     data = request.json or {}
@@ -363,6 +318,73 @@ def use_promo():
 
     return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! {promo['reward']} ETB ቦነስ አግኝተዋል።"})
 
+@app.route('/api/leaderboard', methods=['GET'])
+def leaderboard():
+    conn = get_db()
+    cursor = conn.cursor()
+    top_users = cursor.execute('SELECT first_name, balance FROM users ORDER BY balance DESC LIMIT 10').fetchall()
+    conn.close()
+
+    result = [{"first_name": u['first_name'] or 'Anonymous', "balance": u['balance']} for u in top_users]
+    return jsonify({"status": "success", "leaderboard": result})
+
+# ==========================================
+# ADMIN ENDPOINTS
+# ==========================================
+@app.route('/api/admin/dashboard', methods=['POST'])
+def admin_dashboard():
+    data = request.json or {}
+    admin_id = data.get('admin_id')
+
+    if not is_admin_user(admin_id):
+        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    total_users = cursor.execute('SELECT COUNT(*) as count FROM users').fetchone()['count']
+    total_balance = cursor.execute('SELECT SUM(balance) as total FROM users').fetchone()['total'] or 0.0
+    pending_deposits = cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE type='deposit' AND status='pending'").fetchone()['count']
+    pending_withdrawals = cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE type='withdraw' AND status='pending'").fetchone()['count']
+
+    conn.close()
+    return jsonify({
+        "status": "success",
+        "total_users": total_users,
+        "total_user_balance": total_balance,
+        "pending_deposits": pending_deposits,
+        "pending_withdrawals": pending_withdrawals
+    })
+
+@app.route('/api/admin/add-balance', methods=['POST'])
+def admin_add_balance():
+    data = request.json or {}
+    admin_id = data.get('admin_id')
+    target_id = data.get('target_telegram_id')
+    amount = float(data.get('amount', 0))
+
+    if not is_admin_user(admin_id):
+        return jsonify({"error": "ለዚህ ተግባር ፈቃድ የሎትም!"}), 403
+
+    if not target_id or amount <= 0:
+        return jsonify({"error": "ትክክለኛ የተጠቃሚ ID እና የገንዘብ መጠን ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    user = cursor.execute('SELECT telegram_id FROM users WHERE telegram_id = ?', (target_id,)).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "ተጠቃሚው አልተገኘም!"}), 404
+
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, target_id))
+    cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "manual_deposit", "admin", "approved")', (target_id, amount))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": f"ለተጠቃሚ {target_id} መጠን {amount} ETB በስኬት ተጨምሯል!"})
+
 # ==========================================
 # FRONTEND MINI APP RENDER
 # ==========================================
@@ -379,16 +401,19 @@ def index():
             <style>
                 body { background-color: #0d141e; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 12px; }
                 .header { display: flex; align-items: center; justify-content: space-between; background: #16212e; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
-                .balance-box { font-size: 13px; color: #4bc0c0; }
+                .balance-box { font-size: 13px; color: #4bc0c0; text-align: right; }
                 .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .menu-card { background: #16212e; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; }
+                .menu-card { background: #16212e; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; font-size: 14px; }
                 .menu-card:active { background: #233346; }
-                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; }
+                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; max-height: 80vh; overflow-y: auto; }
                 input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; box-sizing: border-box; }
+                input, textarea { background: #1c2938; color: #fff; border: 1px solid #2d415a; }
                 button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; }
                 .stake-opts { display: flex; gap: 10px; margin: 10px 0; }
                 .stake-btn { background: #1e2c3d; border: 1px solid #324760; color: #fff; flex: 1; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: bold; }
                 .stake-btn.selected { background: #00c853; border-color: #00c853; }
+                .leaderboard-list { list-style: none; padding: 0; margin: 0; }
+                .leaderboard-item { display: flex; justify-content: space-between; padding: 10px; background: #1c2938; border-bottom: 1px solid #2b3b4e; border-radius: 6px; margin-bottom: 6px; }
             </style>
         </head>
         <body>
@@ -399,14 +424,19 @@ def index():
                         <small id="user-display">Loading...</small>
                     </div>
                     <div class="balance-box">
-                        ወጪ ሊደረግ የሚችል: <b id="main-balance">0.00</b> ETB
+                        ወጪ ሊደረግ የሚችል: <br><b id="main-balance">0.00</b> ETB
                     </div>
                 </div>
 
                 <div class="menu-grid">
                     <div class="menu-card" onclick="openModal('stake-modal')">🎮 Play (/play)</div>
                     <div class="menu-card" onclick="openModal('deposit-modal')">📥 Deposit (/deposit)</div>
+                    <div class="menu-card" onclick="openModal('withdraw-modal')">📤 Withdraw (/withdraw)</div>
+                    <div class="menu-card" onclick="openModal('transfer-modal')">💸 Transfer (/transfer)</div>
                     <div class="menu-card" onclick="openModal('promo-modal')">🎁 Promo Code (/promo)</div>
+                    <div class="menu-card" onclick="openModal('invite-modal')">👥 Invite (/invite)</div>
+                    <div class="menu-card" onclick="loadLeaderboard()">🏆 Leaderboard</div>
+                    <div class="menu-card" onclick="openModal('support-modal')">🎧 Support (/support)</div>
                 </div>
             </div>
 
@@ -419,12 +449,54 @@ def index():
                 <button style="background:#e53935;" onclick="closeModal('deposit-modal')">ዝጋ</button>
             </div>
 
+            <!-- Withdraw Modal -->
+            <div id="withdraw-modal" class="modal">
+                <h4>ገንዘብ ወጪ ማድረጊያ</h4>
+                <input type="number" id="withdraw-amount" placeholder="የገንዘብ መጠን (ETB)">
+                <input type="text" id="withdraw-phone" placeholder="የቴሌብር ስልክ ቁጥር (09...)">
+                <button onclick="submitWithdrawal()">ወጪ ለማድረግ ጠይቅ</button>
+                <button style="background:#e53935;" onclick="closeModal('withdraw-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Transfer Modal -->
+            <div id="transfer-modal" class="modal">
+                <h4>ለሌላ ተጠቃሚ ብር ማስተላለፊያ</h4>
+                <input type="number" id="transfer-receiver" placeholder="የተቀባይ Telegram ID">
+                <input type="number" id="transfer-amount" placeholder="የገንዘብ መጠን (ETB)">
+                <button onclick="submitTransfer()">ብር አስተላልፍ</button>
+                <button style="background:#e53935;" onclick="closeModal('transfer-modal')">ዝጋ</button>
+            </div>
+
             <!-- Promo Modal -->
             <div id="promo-modal" class="modal">
                 <h4>ፕሮሞ ኮድ ያስገቡ</h4>
                 <input type="text" id="promo-code-input" placeholder="ለምሳሌ: BINGO2026">
                 <button onclick="submitPromoCode()">ኮዱን ተቀምጥ</button>
                 <button style="background:#e53935;" onclick="closeModal('promo-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Invite Modal -->
+            <div id="invite-modal" class="modal">
+                <h4>ጓደኞችን ይጋብዙ!</h4>
+                <p style="font-size: 13px; color: #aaa;">የእርስዎን የጋባዥ ሊንክ በመጠቀም ለሚመዘገብ ለእያንዳንዱ ጓደኛዎት <b>5 ETB</b> ቦነስ ያገኛሉ።</p>
+                <input type="text" id="invite-link-input" readonly>
+                <button onclick="copyInviteLink()">ሊንኩን ኮፒ አድርግ</button>
+                <button style="background:#e53935;" onclick="closeModal('invite-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Leaderboard Modal -->
+            <div id="leaderboard-modal" class="modal">
+                <h4>🏆 ከፍተኛ አሸናፊዎች</h4>
+                <div id="leaderboard-container">Loading...</div>
+                <button style="background:#e53935; margin-top: 10px;" onclick="closeModal('leaderboard-modal')">ዝጋ</button>
+            </div>
+
+            <!-- Support Modal -->
+            <div id="support-modal" class="modal">
+                <h4>🎧 የእርዳታ ማዕከል</h4>
+                <p style="font-size: 13px;">ለማንኛውም ጥያቄ ወይም ችግር በአድሚን አድራሻችን ያግኙን፡</p>
+                <p style="text-align: center; font-weight: bold; color: #4bc0c0;">@MerebSupportBot</p>
+                <button style="background:#e53935;" onclick="closeModal('support-modal')">ዝጋ</button>
             </div>
 
             <!-- Stake Selection Modal -->
@@ -446,6 +518,9 @@ def index():
 
                 const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Demo User" };
                 let currentStake = 10;
+
+                // Invite Link
+                document.getElementById('invite-link-input').value = `https://t.me/${BOT_USERNAME}?start=${user.id}`;
 
                 fetch('/api/sync-user', {
                     method: 'POST',
@@ -471,6 +546,13 @@ def index():
                 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
                 function setStake(amount) { currentStake = amount; }
 
+                function copyInviteLink() {
+                    const copyText = document.getElementById("invite-link-input");
+                    copyText.select();
+                    document.execCommand("copy");
+                    alert("የመጋበዣ ሊንክዎ ተገልብጧል!");
+                }
+
                 function submitTelebirrSMS() {
                     const smsText = document.getElementById('deposit-sms').value;
                     if(!smsText.trim()) return alert("እባክዎን SMS ያስገቡ!");
@@ -479,6 +561,38 @@ def index():
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id, sms_text: smsText })
+                    }).then(r => r.json()).then(res => {
+                        alert(res.message || res.error);
+                        if(res.status === 'success') location.reload();
+                    });
+                }
+
+                function submitWithdrawal() {
+                    const amount = document.getElementById('withdraw-amount').value;
+                    const phone = document.getElementById('withdraw-phone').value;
+
+                    if(!amount || !phone) return alert("እባክዎን ሁሉንም መስኮች ይሙሉ!");
+
+                    fetch('/api/withdraw', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegram_id: user.id, amount: amount, phone: phone })
+                    }).then(r => r.json()).then(res => {
+                        alert(res.message || res.error);
+                        if(res.status === 'success') closeModal('withdraw-modal');
+                    });
+                }
+
+                function submitTransfer() {
+                    const receiverId = document.getElementById('transfer-receiver').value;
+                    const amount = document.getElementById('transfer-amount').value;
+
+                    if(!receiverId || !amount) return alert("እባክዎን ሁሉንም መስኮች ይሙሉ!");
+
+                    fetch('/api/transfer', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegram_id: user.id, receiver_id: receiverId, amount: amount })
                     }).then(r => r.json()).then(res => {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
@@ -496,6 +610,22 @@ def index():
                     }).then(r => r.json()).then(res => {
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
+                    });
+                }
+
+                function loadLeaderboard() {
+                    openModal('leaderboard-modal');
+                    fetch('/api/leaderboard')
+                    .then(r => r.json())
+                    .then(res => {
+                        if(res.status === 'success'){
+                            let html = '<ul class="leaderboard-list">';
+                            res.leaderboard.forEach((u, i) => {
+                                html += `<li class="leaderboard-item"><span>${i+1}. ${u.first_name}</span><b>${u.balance.toFixed(2)} ETB</b></li>`;
+                            });
+                            html += '</ul>';
+                            document.getElementById('leaderboard-container').innerHTML = html;
+                        }
                     });
                 }
             </script>
