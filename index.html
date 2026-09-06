@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ዕድል ቢንጎ - Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            margin-bottom: 10px;
+        }
+        .bingo-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            width: 100%;
+            max-width: 350px;
+            margin-bottom: 20px;
+        }
+        .bingo-cell {
+            aspect-ratio: 1;
+            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border: 2px solid var(--tg-theme-hint-color, #ccc);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .bingo-cell.selected {
+            background-color: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border-color: #1b65a0;
+        }
+        #action-btn {
+            background-color: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 350px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <<h2>Mereb Bingo</h2>
+    <p id="user-greeting">እንኳን ደህና መጡ!</p>
+
+    <div class="bingo-grid" id="bingoCard"></div>
+
+    <button id="action-btn" onclick="submitCard()">ካርዱን ላክ</button>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            document.getElementById('user-greeting').innerText = `ሰላም፣ ${tg.initDataUnsafe.user.first_name}!`;
+        }
+
+        const grid = document.getElementById('bingoCard');
+        const numbers = generateRandomBingoNumbers();
+
+        numbers.forEach((num) => {
+            let cell = document.createElement('div');
+            cell.className = 'bingo-cell';
+            cell.innerText = num;
+            cell.onclick = () => {
+                cell.classList.toggle('selected');
+            };
+            grid.appendChild(cell);
+        });
+
+        function generateRandomBingoNumbers() {
+            let nums = [];
+            while(nums.length < 25) {
+                let r = Math.floor(Math.random() * 75) + 1;
+                if(nums.indexOf(r) === -1) nums.push(r);
+            }
+            return nums;
+        }
+
+        function submitCard() {
+            let selectedCells = document.querySelectorAll('.bingo-cell.selected');
+            let selectedValues = Array.from(selectedCells).map(c => c.innerText);
+            
+            fetch('/api/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ numbers: selectedValues, telegram_id: tg.initDataUnsafe.user?.id })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                tg.close();
+            });
+        }
+    </script>
+</body>
+</html>
