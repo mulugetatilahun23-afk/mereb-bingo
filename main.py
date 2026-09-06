@@ -123,25 +123,27 @@ def index():
         <html lang="am">
         <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>Mereb Bingo</title>
             <script src="https://telegram.org/js/telegram-web-app.js"></script>
             <style>
-                body { background-color: #0d141e; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 12px; }
+                * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+                body { background-color: #0d141e; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; margin: 0; padding: 12px; user-select: none; }
                 .header { display: flex; align-items: center; justify-content: space-between; background: #16212e; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
                 .balance-box { font-size: 13px; color: #4bc0c0; text-align: right; }
                 .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .menu-card { background: #16212e; padding: 14px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; }
-                .menu-card:active { background: #233346; }
+                .menu-card { background: #16212e; padding: 16px; border-radius: 8px; text-align: center; font-weight: bold; cursor: pointer; border: 1px solid #233346; touch-action: manipulation; }
+                .menu-card:active { background: #233346; transform: scale(0.98); }
                 
                 .page-view { display: none; }
                 .active-view { display: block; }
-                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 100; max-height: 80vh; overflow-y: auto; }
-                input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; box-sizing: border-box; }
-                button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; }
+                .modal { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: #15202d; padding: 20px; border-top-left-radius: 15px; border-top-right-radius: 15px; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); z-index: 1000; max-height: 85vh; overflow-y: auto; }
+                input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: none; font-size: 14px; }
+                button { background-color: #2481cc; color: white; font-weight: bold; cursor: pointer; touch-action: manipulation; }
+                button:active { opacity: 0.85; }
                 
                 .stake-opts { display: flex; gap: 8px; margin: 10px 0; }
-                .stake-btn { background: #1e2c3d; border: 1px solid #324760; color: #fff; flex: 1; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: bold; }
+                .stake-btn { background: #1e2c3d; border: 1px solid #324760; color: #fff; flex: 1; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; }
                 .stake-btn.selected { background: #00c853; border-color: #00c853; }
 
                 .cartella-header { display: flex; justify-content: space-between; background: #16212e; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; text-align: center; }
@@ -190,7 +192,7 @@ def index():
             </div>
 
             <!-- Registration Phone Modal -->
-            <div id="register-modal" class="modal" style="z-index: 200;">
+            <div id="register-modal" class="modal">
                 <h3 style="margin-top:0; color:#00c853;">እንኳን ደህና መጡ!</h3>
                 <p style="font-size:13px; color:#ccc;">ለመመዝገብ እና ጨዋታውን ለመጀመር እባክዎን የቴሌግራም ስልክ ቁጥርዎን ያስገቡ።</p>
                 <input type="text" id="reg-phone-input" placeholder="ስልክ ቁጥር (ምሳሌ፡ 0912345678)">
@@ -332,19 +334,47 @@ def index():
             </div>
 
             <script>
-                const tg = window.Telegram.WebApp;
-                tg.ready();
-                tg.expand();
+                // Safe Telegram WebApp Initialization
+                let tg = null;
+                try {
+                    if (window.Telegram && window.Telegram.WebApp) {
+                        tg = window.Telegram.WebApp;
+                        tg.ready();
+                        tg.expand();
+                    }
+                } catch (e) {
+                    console.error("Telegram SDK loading error:", e);
+                }
 
-                const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Mereb" };
-                const startParam = tg.initDataUnsafe?.start_param || ""; 
+                const user = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) 
+                             ? tg.initDataUnsafe.user 
+                             : { id: 12345678, first_name: "Mereb" };
+
+                const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ? tg.initDataUnsafe.start_param : "";
 
                 let currentStake = 10;
                 let currentRoomCode = 'GLOBAL';
                 let selectedCartella = null;
                 let timerInterval = null;
 
-                // Loading የሚለውን በቅጽበት በስምህ/Mereb ለመተካት
+                // UI Global Functions
+                window.openModal = function(id) { 
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'block'; 
+                };
+
+                window.closeModal = function(id) { 
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none'; 
+                };
+
+                window.showView = function(viewId) {
+                    document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active-view'));
+                    const target = document.getElementById(viewId);
+                    if (target) target.classList.add('active-view');
+                };
+
+                // Display First Name
                 document.getElementById('user-display').innerText = user.first_name || "Mereb";
 
                 // Sync User with Server
@@ -374,7 +404,7 @@ def index():
                     document.getElementById('user-display').innerText = user.first_name || "Mereb";
                 });
 
-                function registerPhone() {
+                window.registerPhone = function() {
                     const phone = document.getElementById('reg-phone-input').value.trim();
                     if(!phone) return alert("እባክዎን ስልክ ቁጥር ያስገቡ!");
 
@@ -391,28 +421,21 @@ def index():
                             alert(res.error);
                         }
                     });
-                }
+                };
 
-                function showView(viewId) {
-                    document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active-view'));
-                    document.getElementById(viewId).classList.add('active-view');
-                }
-
-                function openModal(id) { document.getElementById(id).style.display = 'block'; }
-                function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
-                function setStake(amount) {
+                window.setStake = function(amount) {
                     currentStake = amount;
                     document.querySelectorAll('.stake-btn').forEach(btn => btn.classList.remove('selected'));
-                    document.getElementById('stake-' + amount).classList.add('selected');
-                }
+                    const targetBtn = document.getElementById('stake-' + amount);
+                    if (targetBtn) targetBtn.classList.add('selected');
+                };
 
-                function showGroupOptions() {
+                window.showGroupOptions = function() {
                     const box = document.getElementById('group-options-box');
-                    box.style.display = box.style.display === 'none' ? 'block' : 'none';
-                }
+                    if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+                };
 
-                function createGroupRoom() {
+                window.createGroupRoom = function() {
                     fetch('/api/group/create', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -420,15 +443,15 @@ def index():
                     }).then(r => r.json()).then(res => {
                         if(res.status === 'success') {
                             alert("የቡድን ጨዋታ ተከፍቷል!\nየቡድን ኮድ: " + res.room_code + "\n\nሊንኩን ለጓደኞችዎ ያጋሩ!");
-                            tg.openTelegramLink(res.share_link);
+                            if (tg && tg.openTelegramLink) tg.openTelegramLink(res.share_link);
                             proceedToCartellaSelection(res.room_code);
                         } else {
                             alert(res.error);
                         }
                     });
-                }
+                };
 
-                function joinGroupRoom() {
+                window.joinGroupRoom = function() {
                     const code = document.getElementById('group-code-input').value.trim().toUpperCase();
                     if(!code) return alert("እባክዎን የቡድን ኮድ ያስገቡ!");
 
@@ -444,9 +467,9 @@ def index():
                             alert(res.error);
                         }
                     });
-                }
+                };
 
-                function proceedToCartellaSelection(roomCode = 'GLOBAL') {
+                window.proceedToCartellaSelection = function(roomCode = 'GLOBAL') {
                     currentRoomCode = roomCode;
                     closeModal('stake-modal');
                     document.getElementById('disp-stake').innerText = currentStake;
@@ -454,7 +477,7 @@ def index():
                     fetchGameStats();
                     start30SecTimer();
                     showView('cartella-view');
-                }
+                };
 
                 function start30SecTimer() {
                     let timeLeft = 30;
@@ -472,10 +495,10 @@ def index():
                     }, 1000);
                 }
 
-                function exitCartellaView() {
+                window.exitCartellaView = function() {
                     if(timerInterval) clearInterval(timerInterval);
                     showView('home-view');
-                }
+                };
 
                 function fetchGameStats() {
                     fetch('/api/game/stats?stake=' + currentStake + '&room=' + currentRoomCode)
@@ -498,7 +521,7 @@ def index():
                     }
                 }
 
-                function confirmCartellaSelection() {
+                window.confirmCartellaSelection = function() {
                     if (!selectedCartella) return alert("እባክዎን 1 ካርቴላ ይምረጡ!");
 
                     fetch('/api/game/generate-card', {
@@ -515,7 +538,7 @@ def index():
                             alert(res.error);
                         }
                     });
-                }
+                };
 
                 function renderBingoBoard(cardData, cartellaNum) {
                     document.getElementById('card-title').innerText = "Cartella #" + cartellaNum;
@@ -541,7 +564,7 @@ def index():
                     }
                 }
 
-                function claimBingo() {
+                window.claimBingo = function() {
                     fetch('/api/game/claim-bingo', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -552,9 +575,9 @@ def index():
                             document.getElementById('winner-text').innerText = (user.first_name || "Mereb") + " won " + res.reward + " ETB!";
                         }
                     });
-                }
+                };
 
-                function loadAgentDashboard() {
+                window.loadAgentDashboard = function() {
                     fetch('/api/agent/stats?telegram_id=' + user.id)
                         .then(r => r.json())
                         .then(res => {
@@ -571,9 +594,9 @@ def index():
                                 }
                             }
                         });
-                }
+                };
 
-                function registerAsAgent() {
+                window.registerAsAgent = function() {
                     fetch('/api/agent/register', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -584,21 +607,21 @@ def index():
                             loadAgentDashboard();
                         }
                     });
-                }
+                };
 
-                function shareAgentLink() {
+                window.shareAgentLink = function() {
                     fetch('/api/agent/share-link', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegram_id: user.id })
                     }).then(r => r.json()).then(res => {
-                        if(res.status === 'success') {
+                        if(res.status === 'success' && tg && tg.openTelegramLink) {
                             tg.openTelegramLink(res.share_link);
                         }
                     });
-                }
+                };
 
-                function loadLeaderboard() {
+                window.loadLeaderboard = function() {
                     fetch('/api/leaderboard?telegram_id=' + user.id)
                         .then(r => r.json())
                         .then(res => {
@@ -620,15 +643,15 @@ def index():
                                 showView('leaderboard-view');
                             }
                         });
-                }
+                };
 
-                function openSection(type) {
-                    if (type === 'support') {
+                window.openSection = function(type) {
+                    if (type === 'support' && tg && tg.openTelegramLink) {
                         tg.openTelegramLink('https://t.me/merebbingosupport');
                     }
-                }
+                };
 
-                function submitTelebirrSMS() {
+                window.submitTelebirrSMS = function() {
                     const smsText = document.getElementById('deposit-sms').value;
                     fetch('/api/deposit-telebirr-sms', {
                         method: 'POST',
@@ -638,9 +661,9 @@ def index():
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                }
+                };
 
-                function submitWithdraw() {
+                window.submitWithdraw = function() {
                     const phone = document.getElementById('withdraw-phone').value;
                     const amount = parseFloat(document.getElementById('withdraw-amount').value);
 
@@ -652,9 +675,9 @@ def index():
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                }
+                };
 
-                function submitTransfer() {
+                window.submitTransfer = function() {
                     const receiver = document.getElementById('transfer-receiver').value;
                     const amount = parseFloat(document.getElementById('transfer-amount').value);
 
@@ -666,9 +689,9 @@ def index():
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                }
+                };
 
-                function submitPromo() {
+                window.submitPromo = function() {
                     const code = document.getElementById('promo-code-input').value;
                     fetch('/api/promo/redeem', {
                         method: 'POST',
@@ -678,7 +701,7 @@ def index():
                         alert(res.message || res.error);
                         if(res.status === 'success') location.reload();
                     });
-                }
+                };
             </script>
         </body>
         </html>
