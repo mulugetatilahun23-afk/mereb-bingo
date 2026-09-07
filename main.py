@@ -809,4 +809,167 @@ def redeem_promo():
     return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! {promo['reward']} ETB ቦነስ አግኝተዋል።"})
 
 if __name__ == '__main__':
+    # ==========================================
+# ADMIN PANEL & API (ለ አድሚን መቆጣጠሪያ)
+# ==========================================
+@app.route('/mereb-admin-19')
+def admin_panel():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="am">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mereb Admin</title>
+        <style>
+            body { background-color: #1a1a2e; color: white; font-family: Arial, sans-serif; padding: 20px; }
+            .card { background: #16212e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #233346; }
+            h2 { color: #4bc0c0; text-align: center; }
+            input, button { padding: 12px; margin: 8px 0; width: 100%; border-radius: 6px; border: none; box-sizing: border-box; }
+            button { background: #e53935; color: white; font-weight: bold; cursor: pointer; }
+            .btn-green { background: #00c853; }
+            .btn-blue { background: #2481cc; }
+        </style>
+    </head>
+    <body>
+        <h2>👑 የመረብ ቢንጎ አድሚን</h2>
+        
+        <div class="card">
+            <h3>1. የደንበኛ ሂሳብ ማስተካከያ</h3>
+            <input type="text" id="user_id" placeholder="የደንበኛ Telegram ID">
+            <input type="number" id="amount" placeholder="የብር መጠን">
+            <button class="btn-green" onclick="adminAction('deposit')">ገቢ አድርግ (Deposit)</button>
+            <button onclick="adminAction('withdraw')">ወጪ አድርግ (Withdraw)</button>
+        </div>
+
+        <div class="card">
+            <h3>2. አዲስ ፕሮሞሽን ማውጫ</h3>
+            <input type="text" id="promo_code" placeholder="ፕሮሞ ኮድ (ለምሳሌ: MEREB100)">
+            <input type="number" id="promo_amount" placeholder="የሚሰጠው የብር መጠን">
+            <button class="btn-blue" onclick="adminAction('promo')">ፕሮሞሽን ፍጠር</button>
+        </div>
+
+        <div class="card">
+            <h3>3. የተጠቃሚ እንቅስቃሴ ማያ (Logs)</h3>
+            <input type="text" id="log_user_id" placeholder="የደንበኛ Telegram ID">
+            <button class="btn-blue" onclick="adminAction('logs')">እንቅስቃሴ አሳይ</button>
+            <div id="log_result" style="margin-top:10px; font-size:14px; color:#4bc0c0; line-height:1.5;"></div>
+        </div>
+
+        <script>
+            async function adminAction(actionType) {
+                let endpoint = '';
+                let payload = {};
+
+                if(actionType === 'deposit' || actionType === 'withdraw') {
+                    endpoint = '/api/admin/transaction';
+                    payload = {
+                        user_id: document.getElementById('user_id').value,
+                        amount: parseFloat(document.getElementById('amount').value),
+                        action: actionType
+                    };
+                } else if(actionType === 'promo') {
+                    endpoint = '/api/admin/promo';
+                    payload = {
+                        code: document.getElementById('promo_code').value,
+                        amount: parseFloat(document.getElementById('promo_amount').value)
+                    };
+                } else if(actionType === 'logs') {
+                    endpoint = '/api/admin/logs';
+                    payload = { user_id: document.getElementById('log_user_id').value };
+                }
+
+                try {
+                    let res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                    let data = await res.json();
+                    
+                    if(actionType === 'logs') {
+                        document.getElementById('log_result').innerHTML = data.status === 'success' ? data.logs : `<span style="color:#ff5252">${data.error}</span>`;
+                    } else {
+                        alert(data.message || data.error);
+                    }
+                } catch (e) {
+                    alert("የኢንተርኔት ወይም የሰርቨር ችግር አጋጥሟል!");
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """)
+
+@app.route('/api/admin/transaction', methods=['POST'])
+def admin_transaction():
+    data = request.json or {}
+    user_id = data.get('user_id')
+    amount = float(data.get('amount', 0))
+    action = data.get('action')
+
+    if not user_id or amount <= 0:
+        return jsonify({"error": "ትክክለኛ Telegram ID እና የብር መጠን ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (user_id,)).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "ተጠቃሚው አልተገኘም!"}), 404
+
+    if action == 'deposit':
+        cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, user_id))
+        cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "admin_deposit", "system", "approved")', (user_id, amount))
+    elif action == 'withdraw':
+        cursor.execute('UPDATE users SET balance = balance - ? WHERE telegram_id = ?', (amount, user_id))
+        cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "admin_withdraw", "system", "approved")', (user_id, amount))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": f"{amount} ETB በተሳካ ሁኔታ ተስተካክሏል!"})
+
+@app.route('/api/admin/promo', methods=['POST'])
+def admin_create_promo():
+    data = request.json or {}
+    code = str(data.get('code', '')).strip().upper()
+    reward = float(data.get('amount', 0))
+
+    if not code or reward <= 0:
+        return jsonify({"error": "ኮዱን እና የብር መጠኑን በትክክል ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    existing = cursor.execute('SELECT code FROM promo_codes WHERE code = ?', (code,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({"error": "ይህ ፕሮሞ ኮድ ቀደም ሲል ተፈጥሯል!"}), 400
+
+    cursor.execute('INSERT INTO promo_codes (code, reward, used) VALUES (?, ?, 0)', (code, reward))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": f"ፕሮሞ ኮድ ({code}) ለ {reward} ETB በተሳካ ሁኔታ ተፈጥሯል!"})
+
+@app.route('/api/admin/logs', methods=['POST'])
+def admin_logs():
+    data = request.json or {}
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({"error": "የተጠቃሚውን Telegram ID ያስገቡ!"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    # የመጨረሻዎቹን 15 እንቅስቃሴዎች ከ ዳታቤዝ ያወጣል
+    logs = cursor.execute('SELECT type, amount, date FROM transactions WHERE telegram_id = ? ORDER BY date DESC LIMIT 15', (user_id,)).fetchall()
+    conn.close()
+    
+    if not logs:
+        return jsonify({"error": "ምንም አይነት የትራንዛክሽን እንቅስቃሴ አልተገኘም!"}), 404
+        
+    log_text = "<br>".join([f"👉 <b>{l['type']}</b> | {l['amount']} ETB | <i>{l['date']}</i>" for l in logs])
+    return jsonify({"status": "success", "logs": log_text})
+
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
