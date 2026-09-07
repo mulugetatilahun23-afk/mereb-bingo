@@ -807,12 +807,10 @@ def redeem_promo():
     conn.close()
 
     return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! {promo['reward']} ETB ቦነስ አግኝተዋል።"})
-
-if __name__ == '__main__':
+@app.route('/mereb-admin-19')
     # ==========================================
 # ADMIN PANEL & API (ለ አድሚን መቆጣጠሪያ)
 # ==========================================
-@app.route('/mereb-admin-19')
 def admin_panel():
     return render_template_string("""
     <!DOCTYPE html>
@@ -971,5 +969,5 @@ def admin_logs():
         
     log_text = "<br>".join([f"👉 <b>{l['type']}</b> | {l['amount']} ETB | <i>{l['date']}</i>" for l in logs])
     return jsonify({"status": "success", "logs": log_text})
-
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
