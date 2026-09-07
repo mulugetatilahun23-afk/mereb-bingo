@@ -217,7 +217,7 @@ def index():
                 </div>
 
                 <div style="text-align:center; margin-top:20px;">
-                    <button style="width:auto; padding:10px 20px; background:#00c853;" onclick="claimBingo()">🔥 BINGO! (Claim Win)</button>
+                    <button style="width:auto; padding:10px 20px; background:#00c853;" 
                 </div>
             </div>
 
@@ -477,6 +477,85 @@ def index():
                         if(res.status === 'success') location.reload();
                     });
                 }
+                // የ30 ሴኮንድ ቆጠራው ሲያልቅ ይህ ፋንክሽን ይጠራል
+function startGameAutoPlay() {
+    // ጌሙ ሲጀመር በድምፅ ለማሳወቅ
+    speakText("ጨዋታው ተጀምሯል! መልካም ዕድል!");
+    
+    // በየ 5 ሴኮንዱ አዲስ ቁጥር ለመጥራት (እንደ ሰርቨርህ ፍጥነት ማስተካከል ትችላለህ)
+    setInterval(callNextNumber, 5000); 
+}
+
+// 1. ድምፅ የሚያወጣው ሲስተም (Text-to-Speech)
+function speakText(text) {
+    let utterance = new SpeechSynthesisUtterance(text);
+    // የአማርኛ ድምፅ ካለ በዛ እንዲጠራ፣ ከሌለ በስልኩ ዲፎልት ድምፅ
+    utterance.lang = 'am-ET'; 
+    window.speechSynthesis.speak(utterance);
+}
+
+// 2. አዲስ ቁጥር ሲወጣ የሚሰራው ፋንክሽን
+function callNextNumber() {
+    // እዚህ ጋር ከሰርቨርህ የሚመጣውን አዲስ ቁጥር ትቀበላለህ (ለምሳሌ 45 ወጣ እንበል)
+    // let drawnNumber = fetchNumberFromServer(); 
+    let drawnNumber = Math.floor(Math.random() * 75) + 1; // (ለጊዜው ራንደም ቁጥር ነው)
+    
+    // ቁጥሩን በድምፅ ይጠራል
+    speakText(drawnNumber.toString());
+
+    // 3. ቁጥሩ ካርቴላው ላይ ካለ አረንጓዴ ቀለም (Shade) ያደርጋል
+    let cells = document.querySelectorAll('.bingo-cell');
+    cells.forEach(cell => {
+        if (cell.innerText == drawnNumber) {
+            cell.style.backgroundColor = '#00c853'; // አረንጓዴ ቀለም
+            cell.style.color = 'white';
+            cell.classList.add('marked'); // ምልክት መደረጉን ለማስታወስ
+        }
+    });
+
+    // ቁጥሩ ከተቀባ በኋላ አሸናፊ መኖሩን ያረጋግጣል
+    checkBingoWin();
+}
+
+// 4. Horizontal, Vertical ወይም Diagonal መስመር መስራቱን የሚያረጋግጥ
+function checkBingoWin() {
+    let cells = document.querySelectorAll('.bingo-cell');
+    let board = [];
+    let isWin = false;
+
+    // ካርቴላውን ወደ 5x5 ማትሪክስ ይቀይራል
+    for (let i = 0; i < 5; i++) {
+        board.push([
+            cells[i * 5 + 0].classList.contains('marked'),
+            cells[i * 5 + 1].classList.contains('marked'),
+            cells[i * 5 + 2].classList.contains('marked'),
+            cells[i * 5 + 3].classList.contains('marked'),
+            cells[i * 5 + 4].classList.contains('marked')
+        ]);
+    }
+
+    // ወደ ጎን (Horizontal) እና ወደ ታች (Vertical) መሙላቱን ያረጋግጣል
+    for (let i = 0; i < 5; i++) {
+        if (board[i][0] && board[i][1] && board[i][2] && board[i][3] && board[i][4]) isWin = true;
+        if (board[0][i] && board[1][i] && board[2][i] && board[3][i] && board[4][i]) isWin = true;
+    }
+
+    // ማዕዘን ለ ማዕዘን (Diagonal) መሙላቱን ያረጋግጣል
+    if (board[0][0] && board[1][1] && board[2][2] && board[3][3] && board[4][4]) isWin = true;
+    if (board[0][4] && board[1][3] && board[2][2] && board[3][1] && board[4][0]) isWin = true;
+
+    // አሸናፊ ከተገኘ
+    if (isWin) {
+        speakText("ቢንጎ! አሸናፊ ተገኝቷል!");
+        
+        // አሸናፊውን ካርቴላ Display ያደርጋል (ወይም ሰርቨር ላይ አሸናፊውን ይልካል)
+        setTimeout(() => {
+            alert("🎉 ቢንጎ! አሸናፊ ሆነዋል!");
+            // window.location.href = '/winner-page'; (ወደ አሸናፊ ገፅ ለመውሰድ)
+        }, 1000);
+    }
+}
+
             </script>
         </body>
         </html>
