@@ -10,8 +10,8 @@ import requests
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("8967099088:AAEpqyu1ZMb8THzF40ZSwFUZxq43dH-oPYA
-", "")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8967099088:AAEpqyu1ZMb8THzF40ZSWfUZxq43dH-oPYA")
+
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
 DB_NAME = 'mereb_bingo.db'
 
