@@ -6,7 +6,9 @@ import json
 import re
 import urllib.parse
 from datetime import datetime
-app = Flask(name)
+
+app = Flask(__name__)
+
 Environment Variables
 BOT_TOKEN = os.environ.get("8967099088:AAEpqyu1ZMb8THzF40ZSwFUZxq43dH-oPYA","")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
