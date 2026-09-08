@@ -6,10 +6,12 @@ import json
 import re
 import urllib.parse
 from datetime import datetime
+import requests
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("8967099088:AAEpqyu1ZMb8THzF40ZSwFUZxq43dH-oPYA", "")
+BOT_TOKEN = os.environ.get("8967099088:AAEpqyu1ZMb8THzF40ZSwFUZxq43dH-oPYA
+", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MerebBingoBot")
 DB_NAME = 'mereb_bingo.db'
 
@@ -93,6 +95,62 @@ def health():
     return jsonify({"status": "alive", "project": "Mereb Bingo"}), 200
 
 # ==========================================
+# TELEGRAM BOT CHAT WEBHOOK HANDLER
+# ==========================================
+def send_telegram_message(chat_id, text, reply_markup=None):
+    if not BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def telegram_webhook():
+    data = request.get_json()
+    if not data or 'message' not in data:
+        return jsonify({"status": "ok"})
+
+    message = data['message']
+    chat_id = message['chat']['id']
+    text = message.get('text', '').strip().lower()
+    first_name = message['from'].get('first_name', 'ተጫዋች')
+
+    # ሲስተሙን ለመጀመር ወይም ትዕዛዝ ሲጻፍ የሚሰጥ ምላሽ
+    if text.startswith('/start') or text.startswith('/play') or text == 'play':
+        mini_app_url = f"https://t.me/{BOT_USERNAME}/app"
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "🎮 Play Mereb Bingo (ጨዋታ ጀምር)", "web_app": {"url": mini_app_url}}],
+                [{"text": "💬 ዩቱብ/ድጋፍ (Support)", "url": "https://t.me/merebbingosupport"}]
+            ]
+        }
+        welcome_text = f"ሰላም <b>{first_name}</b>! ወደ <b>መረብ ቢንጎ (Mereb Bingo)</b> በደህና መጡ።\n\nከታች ያለውን ღილ በመጫን ጨዋታውን መጀመር እና ሂሳብዎን ማስተዳደር ይችላሉ።"
+        send_telegram_message(chat_id, welcome_text, reply_markup)
+
+    elif text.startswith('/deposit'):
+        send_telegram_message(chat_id, "📥 ሂሳብ ለመሙላት ሚኒ አፑን (Mini App) ይክፈቱ ወይም የቴሌብር SMS ይለጥፉ።")
+    elif text.startswith('/withdraw'):
+        send_telegram_message(chat_id, "📤 ገንዘብ ለማውጣት ሚኒ አፑን (Withdraw) ይጠቀሙ።")
+    else:
+        send_telegram_message(chat_id, "እባክዎን ጨዋታውን ለመጀመር <b>/play</b> ብለው ይጻፉ ወይም ከታች ያለውን ሊንክ ይጠቀሙ።", {
+            "inline_keyboard": [
+                [{"text": "🎮 Mereb Bingo App", "web_app": {"url": f"https://t.me/{BOT_USERNAME}/app"}}]
+            ]
+        })
+
+    return jsonify({"status": "ok"})
+
+
+# ==========================================
 # FRONTEND MINI APP
 # ==========================================
 @app.route('/')
@@ -133,15 +191,11 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
 .bingo-cell { background: #223144; color: #fff; text-align: center; height: 48px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 6px; font-size: 15px; }
 .bingo-cell.header-cell { background: #2d415a; color: #4bc0c0; font-size: 16px; font-weight: 900; }
 .bingo-cell.star-cell { background: #00c853; color: #fff; font-size: 20px; }
-.bingo-cell.marked { background: #ffb300; color: #000; }
-.bingo-cell.drawn-green { background: #00c853; color: #fff; }
-
 .winner-banner { background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 12px; border-radius: 10px; text-align: center; margin-bottom: 15px; border: 1px solid #ffb300; }
 </style>
 </head>
 <body>
 
-<!-- Home Dashboard -->
 <div id="home-view" class="page-view active-view">
     <div class="header">
         <div>
@@ -165,7 +219,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     </div>
 </div>
 
-<!-- Stake Selection Modal -->
 <div id="stake-modal" class="modal">
     <h4 style="margin-top:0;">የመወራረጃ መጠን ይምረጡ (Stake)</h4>
     <div class="stake-opts">
@@ -177,7 +230,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     <button style="background:#e53935;" onclick="closeModal('stake-modal')">ተመለስ</button>
 </div>
 
-<!-- Cartella Selection View (1-300) -->
 <div id="cartella-view" class="page-view">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <button style="width:auto; margin:0; padding:6px 12px;" onclick="exitCartellaView()">← Back</button>
@@ -195,7 +247,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     <button style="margin-top:12px;" onclick="confirmCartellaSelection()">ካርቴላ አረጋግጥ (Join Game)</button>
 </div>
 
-<!-- Active Bingo Game View -->
 <div id="game-view" class="page-view">
     <div class="winner-banner" id="winner-box">
         <h3 style="margin:0; color:#ffb300;">🎉🏆🎉 BINGO!</h3>
@@ -207,7 +258,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
             <span id="card-title">Cartella #--</span>
             <span id="player-owner">Owner: You</span>
         </div>
-
         <div class="bingo-grid" id="bingo-board"></div>
     </div>
 
@@ -216,7 +266,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     </div>
 </div>
 
-<!-- Deposit Modal -->
 <div id="deposit-modal" class="modal">
     <h4>በቴሌብር ሂሳብ መሙያ</h4>
     <p style="font-size: 12px; color: #aaa;">ገንዘቡን ወደ <b>0923410403 (Mulugeta Tilahun)</b> ከላኩ በኋላ ከቴሌብር የደረሰዎትን SMS እዚህ ይለጥፉ።</p>
@@ -225,7 +274,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     <button style="background:#e53935;" onclick="closeModal('deposit-modal')">ዝጋ</button>
 </div>
 
-<!-- Withdraw Modal -->
 <div id="withdraw-modal" class="modal">
     <h4>ገንዘብ ማውጫ (Withdraw)</h4>
     <p style="font-size: 11px; color: #aaa;">* በቀን እስከ 2000 ETB ብቻ ማውጣት ይቻላል። 50 ETB በቀሪነት መቅረት አለበት።</p>
@@ -235,7 +283,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     <button style="background:#e53935;" onclick="closeModal('withdraw-modal')">ዝጋ</button>
 </div>
 
-<!-- Transfer Modal -->
 <div id="transfer-modal" class="modal">
     <h4>Transfer Money</h4>
     <p style="font-size: 11px; color: #aaa;">* በቀን እስከ 2000 ETB ብቻ። 50 ETB በቀሪነት መቅረት አለበት።</p>
@@ -245,7 +292,6 @@ button { background-color: #2481cc; color: white; font-weight: bold; cursor: poi
     <button style="background:#e53935;" onclick="closeModal('transfer-modal')">ዝጋ</button>
 </div>
 
-<!-- Promo Modal -->
 <div id="promo-modal" class="modal">
     <h4>ፕሮሞ ኮድ ማስገቢያ</h4>
     <input type="text" id="promo-code-input" placeholder="ፕሮሞ ኮድ ያስገቡ">
@@ -477,7 +523,7 @@ function submitPromo() {
     """)
 
 # ==========================================
-# USER SYNC
+# USER SYNC & APIS
 # ==========================================
 @app.route('/api/sync-user', methods=['POST'])
 def sync_user():
@@ -523,9 +569,6 @@ def sync_user():
         }
     })
 
-# ==========================================
-# GAME STATS (PLAYERS & DERASH CALCULATOR)
-# ==========================================
 @app.route('/api/game/stats', methods=['GET'])
 def game_stats():
     stake = float(request.args.get('stake', 10.0))
@@ -542,9 +585,6 @@ def game_stats():
     conn.close()
     return jsonify({"players": player_count, "derash": derash, "stake": stake})
 
-# ==========================================
-# GENERATE BINGO CARD
-# ==========================================
 @app.route('/api/game/generate-card', methods=['POST'])
 def generate_card():
     data = request.json or {}
@@ -581,9 +621,6 @@ def generate_card():
 
     return jsonify({"status": "success", "card": card, "cartella_num": cartella_num})
 
-# ==========================================
-# CLAIM BINGO (WINNER REWARD LOGIC)
-# ==========================================
 @app.route('/api/game/claim-bingo', methods=['POST'])
 def claim_bingo():
     data = request.json or {}
@@ -608,9 +645,6 @@ def claim_bingo():
 
     return jsonify({"status": "success", "message": f"እንኳን ደስ አለዎት! ቢንጎ ሰርተዋል፡ {derash_reward:.2f} ETB ወደ ዋሌትዎ ገብቷል!", "reward": derash_reward})
 
-# ==========================================
-# WITHDRAWAL (DAILY LIMIT 2000 & 50 ETB MIN BAL)
-# ==========================================
 @app.route('/api/withdraw', methods=['POST'])
 def withdraw():
     data = request.json or {}
@@ -641,7 +675,7 @@ def withdraw():
 
     if (today_spent + amount) > DAILY_LIMIT:
         conn.close()
-        return jsonify({"error": f"የቀን የትራንዛክሽን ገደብ አልፈዋል! በቀን ማወጣት/ማስተላለፍ የሚችሉት ቢበዛ {DAILY_LIMIT} ETB ነው። (ዛሬ የተጠቀሙት: {today_spent} ETB)"}), 400
+        return jsonify({"error": f"የቀን የትራንዛክሽን ገደብ አልፈዋል! በቀን ማወጣት/ማስተላለፍ የሚችሉት ቢበዛ {DAILY_LIMIT} ETB ነው።"}), 400
 
     cursor.execute('UPDATE users SET phone_number = ?, balance = balance - ? WHERE telegram_id = ?', (phone, amount, telegram_id))
     cursor.execute('INSERT INTO transactions (telegram_id, amount, type, method, status) VALUES (?, ?, "withdraw", "telebirr", "approved")', (telegram_id, amount))
@@ -651,9 +685,6 @@ def withdraw():
 
     return jsonify({"status": "success", "message": f"{amount} ETB ወደ {phone} ለማውጣት የቀረበው ጥያቄ ተሳክቷል!"})
 
-# ==========================================
-# TRANSFER (DAILY LIMIT 2000 & 50 ETB MIN BAL)
-# ==========================================
 @app.route('/api/transfer', methods=['POST'])
 def transfer_money():
     data = request.json or {}
@@ -676,16 +707,6 @@ def transfer_money():
         conn.close()
         return jsonify({"error": f"ትራንስፈር ማድረግ አይችሉም! ቢያንስ {MIN_REMAINING_BALANCE} ETB በቀሪነት መቅረት አለበት።"}), 400
 
-    today_spent = cursor.execute('''
-        SELECT SUM(amount) as total FROM transactions
-        WHERE telegram_id = ? AND type IN ('withdraw', 'transfer_out')
-        AND date(date) = date('now')
-    ''', (sender_id,)).fetchone()['total'] or 0.0
-
-    if (today_spent + amount) > DAILY_LIMIT:
-        conn.close()
-        return jsonify({"error": f"የቀን የትራንዛክሽን ገደብ አልፈዋል! በቀን ቢበዛ {DAILY_LIMIT} ETB ማስተላለፍ/ማውጣት ይቻላል።"}), 400
-
     recipient = cursor.execute('SELECT telegram_id FROM users WHERE telegram_id = ? OR phone_number = ?', (receiver, receiver)).fetchone()
     if not recipient:
         conn.close()
@@ -701,9 +722,6 @@ def transfer_money():
 
     return jsonify({"status": "success", "message": f"{amount} ETB በስኬት ተላክቷል!"})
 
-# ==========================================
-# TELEBIRR DEPOSIT AUTOMATION
-# ==========================================
 @app.route('/api/deposit-telebirr-sms', methods=['POST'])
 def deposit_telebirr_sms():
     data = request.json or {}
@@ -714,23 +732,18 @@ def deposit_telebirr_sms():
         return jsonify({"error": "ትክክለኛ መረጃ አላስገቡም!"}), 400
 
     if MERCHANT_PHONE not in sms_text and MERCHANT_NAME not in sms_text.upper():
-        return jsonify({"error": f"የተሳሳተ SMS! ክፍያው ወደ {MERCHANT_PHONE} ({MERCHANT_NAME}) መላኩን ያረጋግጡ።"}), 400
+        return jsonify({"error": f"የተሳሳተ SMS! ክፍያው ወደ {MERCHANT_PHONE} መላኩን ያረጋግጡ።"}), 400
 
     tx_match = re.search(r'\b([A-Z0-9]{10,})\b', sms_text.upper())
     if not tx_match:
         return jsonify({"error": "በትራንስክሪፕቱ ላይ የትራንዛክሽን ቁጥር ማግኘት አልተቻለም!"}), 400
 
     tx_id = tx_match.group(1)
-
     amount_match = re.search(r'(?:ETB|ብር)\s*([\d.]+)|([\d.]+)\s*(?:ETB|ብር)', sms_text, re.IGNORECASE)
     if not amount_match:
-        return jsonify({"error": "የክፍያውን የገንዘብ መጠን ማረጋገጥ አልተቻለም!"}), 400
+        return jsonify({"error": "የክፍያውን መጠን ማረጋገጥ አልተቻለም!"}), 400
 
-    amount_str = amount_match.group(1) or amount_match.group(2)
-    try:
-        amount = float(amount_str)
-    except ValueError:
-        return jsonify({"error": "የገንዘብ መጠኑ የተሳሳተ ነው!"}), 400
+    amount = float(amount_match.group(1) or amount_match.group(2))
 
     conn = get_db()
     cursor = conn.cursor()
@@ -740,34 +753,21 @@ def deposit_telebirr_sms():
         conn.close()
         return jsonify({"error": "ይህ የትራንዛክሽን ቁጥር ቀደም ሲል ጥቅም ላይ ውሏል!"}), 400
 
-    try:
-        cursor.execute('''
-            INSERT INTO transactions (telegram_id, tx_id, amount, type, method, status, raw_sms)
-            VALUES (?, ?, ?, 'deposit', 'telebirr_sms', 'approved', ?)
-        ''', (telegram_id, tx_id, amount, sms_text))
+    cursor.execute('INSERT INTO transactions (telegram_id, tx_id, amount, type, method, status, raw_sms) VALUES (?, ?, ?, "deposit", "telebirr_sms", "approved", ?)', (telegram_id, tx_id, amount, sms_text))
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, telegram_id))
 
-        cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (amount, telegram_id))
+    conn.commit()
+    updated_user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
+    conn.close()
 
-        conn.commit()
-        updated_user = cursor.execute('SELECT balance FROM users WHERE telegram_id = ?', (telegram_id,)).fetchone()
-        conn.close()
-
-        return jsonify({
-            "status": "success",
-            "message": f"በስኬት ተረጋገጠ! {amount} ETB ወደ አካውንትዎ ተጨምሯል።",
-            "new_balance": updated_user['balance']
-        })
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        return jsonify({"error": f"ስህተት ተከሰተ፡ {str(e)}"}), 500
+    return jsonify({"status": "success", "message": f"{amount} ETB ወደ አካውንትዎ ተጨምሯል።", "new_balance": updated_user['balance']})
 
 @app.route('/api/share-link', methods=['POST'])
 def share_link():
     data = request.json or {}
     telegram_id = data.get('telegram_id')
     mini_app_link = f"https://t.me/{BOT_USERNAME}/app?startapp=ref_{telegram_id}"
-    share_text = "🎯 በ«ሜረብ ቢንጎ» ተጫውተው ይሸልሙ! አሁኑኑ ይቀላቀሉ፡"
+    share_text = "🎯 በ«መረብ ቢንጎ» ተጫውተው ይሸልሙ! አሁኑኑ ይቀላቀሉ፡"
     encoded_text = urllib.parse.quote(share_text)
 
     return jsonify({
@@ -783,7 +783,6 @@ def redeem_promo():
 
     conn = get_db()
     cursor = conn.cursor()
-
     promo = cursor.execute('SELECT * FROM promo_codes WHERE code = ? AND used = 0', (code,)).fetchone()
     if not promo:
         conn.close()
@@ -791,7 +790,6 @@ def redeem_promo():
 
     cursor.execute('UPDATE promo_codes SET used = 1 WHERE code = ?', (code,))
     cursor.execute('UPDATE users SET balance = balance + ? WHERE telegram_id = ?', (promo['reward'], telegram_id))
-
     conn.commit()
     conn.close()
 
