@@ -3,114 +3,303 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ዕድል ቢንጎ - Mini App</title>
+    <title>መረብ ቢንጎ - Mini App</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
+            background-color: var(--tg-theme-bg-color, #121212);
+            color: var(--tg-theme-text-color, #ffffff);
             margin: 0;
-            padding: 15px;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
-        h2 {
-            margin-bottom: 10px;
+        h2, h3 {
+            color: #f39c12;
+            text-align: center;
         }
-        .bingo-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 6px;
+        .box {
+            background: var(--tg-theme-secondary-bg-color, #1e1e1e);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #333;
             width: 100%;
             max-width: 350px;
-            margin-bottom: 20px;
+            box-sizing: border-box;
         }
-        .bingo-cell {
-            aspect-ratio: 1;
-            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            border: 2px solid var(--tg-theme-hint-color, #ccc);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: bold;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-        .bingo-cell.selected {
-            background-color: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            border-color: #1b65a0;
-        }
-        #action-btn {
-            background-color: var(--tg-theme-button-color, #2481cc);
+        .btn {
+            background-color: var(--tg-theme-button-color, #e67e22);
             color: var(--tg-theme-button-text-color, #ffffff);
             border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 350px;
+            padding: 10px;
+            border-radius: 5px;
             cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 4px 0;
+            width: 100%;
+        }
+        .btn:hover {
+            background: #d35400;
+        }
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            max-width: 280px;
+            margin: 10px auto;
+            background: #222;
+            padding: 8px;
+            border-radius: 6px;
+        }
+        .cell {
+            background: #333;
+            padding: 8px;
+            font-size: 13px;
+            border-radius: 4px;
+            text-align: center;
+            color: white;
+        }
+        .marked {
+            background: #27ae60 !important;
+            color: white;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 9px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: var(--tg-theme-bg-color, #222);
+            color: var(--tg-theme-text-color, white);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .info-box {
+            font-size: 13px;
+            color: #3498db;
+            background: #15202b;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        .copy-btn {
+            background: #2980b9;
+            padding: 6px;
+            font-size: 12px;
+            width: auto;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        .timer {
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: center;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
+    <h2>🎯 መረብ ቢንጎ (Mereb Bingo)</h2>
 
-    <<h2>Mereb Bingo</h2>
-    <p id="user-greeting">እንኳን ደህና መጡ!</p>
+    <!-- ምዝገባ እና ቴሌግራም መለያ -->
+    <div class="box">
+        <h3>ምዝገባ</h3>
+        <div class="info-box" id="userInfo">ቴሌግራም ID በመፈለግ ላይ...</div>
+        <input type="text" id="phone" placeholder="ስልክ ቁጥር (ለምሳሌ 0923...)">
+        <button class="btn" onclick="registerUser()">ስልክ ቁጥር አስመዝግብ</button>
+    </div>
 
-    <div class="bingo-grid" id="bingoCard"></div>
+    <!-- ዋና እና ኮሚሽን ሂሳብ -->
+    <div class="box">
+        <h3>ቀሪ ሂሳብ</h3>
+        <p style="font-size:14px;">ዋና ሂሳብ: <span id="balance" style="color:#2ecc71;">0.00</span> ብር</p>
+        <p style="font-size:14px;">የኮሚሽን ሂሳብ: <span id="commBalance" style="color:#f1c40f;">0.00</span> ብር</p>
+        <button class="btn" onclick="loadAccount()">ሂሳብ አድስ (Refresh)</button>
+    </div>
 
-    <button id="action-btn" onclick="submitCard()">ካርዱን ላክ</button>
+    <!-- ጓደኛን በመጋበዝ (Invite Link) -->
+    <div class="box">
+        <h3>🔗 የግብዣ ሊንክ</h3>
+        <p style="font-size:12px; color:#aaa;">ሊንኩን ለጓደኛዎ በመላክ ቦነስ ያግኙ።</p>
+        <input type="text" id="inviteLink" readonly style="font-size:11px;">
+        <button class="btn copy-btn" onclick="copyInviteLink()">ሊንኩን ኮፒ አድርግ</button>
+    </div>
+
+    <!-- ገንዘብ ማስገባት (Deposit) -->
+    <div class="box">
+        <h3>ገንዘብ ገቢ ማድረግ</h3>
+        <div class="info-box">
+            • ቴሌብር: <b>0923410403</b> (ሙሉጌታ ጥላሁን)<br>
+            • ንግድ ባንክ: <b>1000149356138</b> (ሙሉጌታ ጥላሁን)
+        </div>
+        <input type="number" id="depAmount" placeholder="የገንዘብ መጠን (ብር)">
+        <select id="depMethod">
+            <option value="Telebirr">ቴሌብር (Telebirr)</option>
+            <option value="CBE">ንግድ ባንክ (CBE)</option>
+        </select>
+        <button class="btn" onclick="makeDeposit()">ክፍያ ላክ</button>
+    </div>
+
+    <!-- ገንዘብ ማውጣት (Withdraw) -->
+    <div class="box">
+        <h3>ገንዘብ ማውጣት</h3>
+        <input type="number" id="withAmount" placeholder="የሚወጣው መጠን (ብር)">
+        <select id="withMethod">
+            <option value="Telebirr">ቴሌብር</option>
+            <option value="CBE">ንግድ ባንክ</option>
+        </select>
+        <input type="text" id="withAccount" placeholder="የመቀበያ አካውንት/ስልክ ቁጥር">
+        <button class="btn" style="background: #c0392b;" onclick="makeWithdraw()">ገንዘብ አውጣ</button>
+    </div>
+
+    <!-- ጨዋታ (Play) -->
+    <div class="box">
+        <h3>የቢንጎ ጨዋታ</h3>
+        <select id="stake">
+            <option value="10">10 ብር</option>
+            <option value="20">20 ብር</option>
+            <option value="30">30 ብር</option>
+        </select>
+        <button class="btn" onclick="startPlay()">ጨዋታ ጀምር</button>
+        <div class="timer" id="timerDisplay"></div>
+        <div id="gameArea"></div>
+    </div>
 
     <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand();
+        let telegramId = null;
 
-        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-            document.getElementById('user-greeting').innerText = `ሰላም፣ ${tg.initDataUnsafe.user.first_name}!`;
-        }
-
-        const grid = document.getElementById('bingoCard');
-        const numbers = generateRandomBingoNumbers();
-
-        numbers.forEach((num) => {
-            let cell = document.createElement('div');
-            cell.className = 'bingo-cell';
-            cell.innerText = num;
-            cell.onclick = () => {
-                cell.classList.toggle('selected');
-            };
-            grid.appendChild(cell);
-        });
-
-        function generateRandomBingoNumbers() {
-            let nums = [];
-            while(nums.length < 25) {
-                let r = Math.floor(Math.random() * 75) + 1;
-                if(nums.indexOf(r) === -1) nums.push(r);
+        window.onload = function() {
+            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
+                const tg = window.Telegram.WebApp;
+                tg.expand();
+                telegramId = tg.initDataUnsafe.user.id;
+                document.getElementById('userInfo').innerText = "ቴሌግራም ID: " + telegramId;
+                loadAccount();
+            } else {
+                telegramId = 12345678;
+                document.getElementById('userInfo').innerText = "Test Mode ID: 12345678";
+                loadAccount();
             }
-            return nums;
+        };
+
+        function loadAccount() {
+            if(!telegramId) return;
+            fetch('/api/account/' + telegramId)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('balance').innerText = data.balance;
+                document.getElementById('commBalance').innerText = data.commission_balance;
+                const botUsername = "MerebBingoBot"; 
+                document.getElementById('inviteLink').value = `https://t.me/${botUsername}?start=ref_${telegramId}`;
+            });
         }
 
-        function submitCard() {
-            let selectedCells = document.querySelectorAll('.bingo-cell.selected');
-            let selectedValues = Array.from(selectedCells).map(c => c.innerText);
-            
+        function registerUser() {
+            const phone = document.getElementById('phone').value;
+            if(!phone) return alert('እባክዎ ስልክ ቁጥር ያስገቡ');
+            fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({telegram_id: telegramId, phone_number: phone})
+            })
+            .then(res => res.json())
+            .then(data => alert(data.message));
+        }
+
+        function copyInviteLink() {
+            const linkInput = document.getElementById('inviteLink');
+            linkInput.select();
+            navigator.clipboard.writeText(linkInput.value);
+            alert("የግብዣ ሊንኩ ተገለበጠ!");
+        }
+
+        function makeDeposit() {
+            const amount = document.getElementById('depAmount').value;
+            const method = document.getElementById('depMethod').value;
+            if(!amount) return alert('እባክዎ መጠን ይሙሉ');
+            fetch('/api/deposit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({telegram_id: telegramId, amount: parseFloat(amount), method: method})
+            })
+            .then(res => res.json())
+            .then(data => { alert(data.message); loadAccount(); });
+        }
+
+        function makeWithdraw() {
+            const amount = document.getElementById('withAmount').value;
+            const method = document.getElementById('withMethod').value;
+            const acc = document.getElementById('withAccount').value;
+            if(!amount || !acc) return alert('ሁሉንም መረጃዎች ይሙሉ');
+            fetch('/api/withdraw', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({telegram_id: telegramId, amount: parseFloat(amount), method: method, account: acc})
+            })
+            .then(res => res.json())
+            .then(data => { alert(data.message); loadAccount(); });
+        }
+
+        function startPlay() {
+            const stake = document.getElementById('stake').value;
+            let timeLeft = 3;
+            const timerElem = document.getElementById('timerDisplay');
+            document.getElementById('gameArea').innerHTML = "<p>ካርቴላ በመዘጋጀት ላይ...</p>";
+
+            let timerInterval = setInterval(() => {
+                timerElem.innerText = `⏳ ጨዋታ ለመጀመር የቀረው: ${timeLeft} ሰከንድ`;
+                timeLeft--;
+                if(timeLeft < 0) {
+                    clearInterval(timerInterval);
+                    timerElem.innerText = "🎮 ጨዋታው ተጀምሯል!";
+                    fetchAndRunGame(stake);
+                }
+            }, 1000);
+        }
+
+        function fetchAndRunGame(stake) {
             fetch('/api/play', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ numbers: selectedValues, telegram_id: tg.initDataUnsafe.user?.id })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({telegram_id: telegramId, stake: stake})
             })
             .then(res => res.json())
             .then(data => {
-                alert(data.message);
-                tg.close();
+                if(data.status === 'success') {
+                    let html = `<h4>የተመረጠው ካርቴላ (5x5)</h4><div class="card-grid" id="cardGrid">`;
+                    data.card.forEach(num => {
+                        html += `<div class="cell" id="cell-${num}">${num}</div>`;
+                    });
+                    html += `</div><p id="callStatus" style="color:#f1c40f; font-weight:bold;"></p>`;
+                    document.getElementById('gameArea').innerHTML = html;
+                    simulateBingoCaller(data.card);
+                } else {
+                    alert(data.message);
+                }
             });
+        }
+
+        function simulateBingoCaller(cardNumbers) {
+            let calledCount = 0;
+            let interval = setInterval(() => {
+                if(calledCount >= 6 || cardNumbers.length === 0) {
+                    clearInterval(interval);
+                    document.getElementById('callStatus').innerText = "🎉 ቢንጎ! አሸንፈዋል!";
+                    loadAccount();
+                    return;
+                }
+                let randNum = cardNumbers[Math.floor(Math.random() * cardNumbers.length)];
+                document.getElementById('callStatus').innerText = `🔊 የተጠራ ቁጥር: ${randNum}`;
+                let cell = document.getElementById('cell-' + randNum);
+                if(cell) cell.classList.add('marked');
+                calledCount++;
+            }, 1500);
         }
     </script>
 </body>
